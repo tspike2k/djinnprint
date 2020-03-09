@@ -55,4 +55,8 @@ Simply copy the file djinnprint.d to the source tree of your project and import 
 
 ## Acknowledgments
 
-This project was inspired by Jonathan Blow and his [compiler/game programming streams](https://www.youtube.com/user/jblow888/videos) which indirectly made me interested in both the D programming language and writing a type-safe replacement for printf. Walter Bright deserves a medal for all his efforts on the D programming language. Both he and the D community have done the impossible; together they wrote a legible standard library which has been a tremendous help in learning to use the language. The influence of the C# programming language can be seen by the use of curly braces as format specifiers.
+* This project was inspired by Jonathan Blow and his [compiler/game programming streams](https://www.youtube.com/user/jblow888/videos) which indirectly made me interested in both the D programming language and writing a type-safe replacement for printf.
+
+* Walter Bright deserves a medal for all his efforts on the D programming language. Both he and the D community have done the impossible; together they wrote a legible standard library which has been a tremendous help in learning to use the language.
+
+* The influence of the C# programming language can be seen by the use of curly braces as format specifiers.
