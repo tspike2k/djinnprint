@@ -6,8 +6,7 @@ Type-safe, @nogc functions used to format data as text.
 
 ```D    
 char[512] buffer;
-auto result = bprint!"The numbers are {2}, {0}, and {1}."(buffer, 1, 2, 3);
-printf("%s\n", result.ptr);
+print(format!"The numbers are {2}, {0}, and {1}."(buffer, 1, 2, 3));
 ```
 
 ### Output
@@ -20,6 +19,10 @@ The numbers are 3, 1, and 2.
 
 The D programming language employs a garbage collector to automate memory management by default. This is not always desirable. Though garbage collection can easily be disabled by marking functions with the @nogc attribute, much of the standard library is reliant on the garbage collector and cannot be called from @nogc code. This limitation can be observed in std.format, the portion of the standard library which provides data-to-text formatting. The aim behind djinnprint is to fill this void by providing simple, @nogc compatible data formatting functions. An additional goal is to ease localization efforts by letting the format string determine the order arguments appear in the resulting output.
 
+For a demonstration of this code, see the examples.d file.
+
+Note that this project is also -betterC compatible.
+
 ## Usage
 
 ### Format Specifiers
@@ -30,9 +33,13 @@ If two open curly braces appear next to one another djinnprint will not interpre
 
 Note that formatting options are planned but not currently implemented.
 
-### bprint
+### format()
 
-bprint is used to format arguments into a fixed size buffer, similar to the snprintf function in C. The format string is passed as a template argument. The function then takes the buffer followed by variadic arguments. The format string is copied into the buffer with each format specifier replaced by the textual representation of a given argument's value. To ensure compatibility with C the end of the resulting string is null terminated. Even if the resulting string is too long to fit in the buffer and is truncated, the last element of the buffer is the null terminator. A slice is returned containing how much was written into the buffer. For a demonstration of this function, see the bprint_examples.d file.
+The format function is used to format arguments into a fixed size buffer, similar to the snprintf function in C. The format string is passed as a template argument. The function then takes the buffer followed by variadic arguments. The format string is copied into the buffer with each format specifier replaced by the textual representation of a given argument's value. To ensure compatibility with C the end of the resulting string is null terminated. Even if the resulting string is too long to fit in the buffer and is truncated, the last element of the buffer is the null terminator. A slice is returned containing how much was written into the buffer.
+
+### print()
+
+The print function simply takes a string or character array and prints the contents to standard output.
 
 ## Status
 
@@ -40,7 +47,7 @@ This project is currently a very early proof-of-concept and is in no way product
 
 ### Todo
 
-* Additional function for printing to files (including stdout and stderr).
+* Additional function for printing to files.
 * Formatting options for variables.
 * Support for additional data types (pointers, structs, etc.).
 * Thorough testing.

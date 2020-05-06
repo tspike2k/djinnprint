@@ -4,13 +4,9 @@
 
 module djinnprint;
 
-@nogc nothrow:
+private @nogc nothrow:
 
 //version = assertOnTruncation;
-
-private:
-
-// TODO: Have a version of bprint that writes to files instead, such as stdout.
 
 ulong formatArg(T)(T t, in FormatSpec spec, char[] buffer)
 {
@@ -25,6 +21,7 @@ ulong formatArg(T)(T t, in FormatSpec spec, char[] buffer)
     else static if (is(T == float))
     {
         // TODO: Eleminate our dependence on snprintf and use our own float formatting functions. Look to stb_sprintf?
+        // Note that even Phobos (the D standard library) used snprintf to format floats. 
         import core.stdc.stdio : snprintf;
         bytesWritten = snprintf(buffer.ptr, buffer.length, "%f", t);
     }
@@ -42,22 +39,22 @@ ulong formatArg(T)(T t, in FormatSpec spec, char[] buffer)
     }
     else static if(is(T == char[]) || is(T == string))
     {
-        bytesWritten = buffer.length < t.length ? buffer.length : t.length;
+        if (buffer.length < t.length)
+        {
+            bytesWritten = buffer.length;
+            version(assertOnTruncation) assert(0, "ERR: buffer truncated.");
+        }
+        else
+        {
+            bytesWritten = t.length;
+        }
+        
         buffer[0..bytesWritten] = t[0..bytesWritten];
     }
     else
     {
         pragma(msg, "ERR in print.formatArg(...): Unhandled type " ~ T.stringof);
         static assert(0);
-    }
-    
-    version(assertOnTruncation)
-    {
-        assert(bytesWritten < buffer.length, "Formatted argument text was truncated. Consider passing in a larger buffer.");
-    }
-    else
-    {
-        if (bytesWritten > buffer.length) bytesWritten = buffer.length - 1;
     }
     
     return bytesWritten;
@@ -102,7 +99,7 @@ FormatSpec getFormatSpec(in char[] command)
     return result;
 }
 
-ulong intToString(T)(char[] buffer, T t, ubyte base)
+size_t intToString(T)(char[] buffer, T t, ubyte base)
 {
     import std.traits;
     import std.math;
@@ -142,7 +139,17 @@ ulong intToString(T)(char[] buffer, T t, ubyte base)
     }
     
     size_t charsWritten = conversion.length - finish;
-    size_t minToCopy = charsWritten < buffer.length ? charsWritten : buffer.length;
+    size_t minToCopy = void;
+    if(charsWritten < buffer.length)
+    {
+        minToCopy = charsWritten;
+    }
+    else
+    {
+        version(assertOnTruncation) assert(0, "ERR: buffer truncated.");
+        minToCopy = buffer.length;
+    }
+    
     buffer[0..minToCopy] = conversion[finish..finish+minToCopy];
     
     return minToCopy;
@@ -150,7 +157,7 @@ ulong intToString(T)(char[] buffer, T t, ubyte base)
 
 public:
 
-char[] bprint(alias fmt, Args...)(char[] buffer, Args args)
+char[] format(alias fmt, Args...)(char[] buffer, Args args)
 {
     size_t copyToBuffer(alias fmt)(char[] buffer, size_t fmtStart, size_t fmtEnd)
     {
@@ -159,10 +166,13 @@ char[] bprint(alias fmt, Args...)(char[] buffer, Args args)
         buffer[0..bytesToCopy] = fmt[fmtStart..fmtStart+bytesToCopy];
         return bytesToCopy;
     }
+    
+    size_t bufferWritten = 0;
+    enum outputPolicy = ``;
 
     size_t fmtCursor = 0;
     size_t fmtCopyToBufferIndex = 0;
-    size_t bufferWritten = 0;
+    
     while(fmtCursor < fmt.length)
     {        
         if (fmt[fmtCursor] == '{')
@@ -207,7 +217,7 @@ char[] bprint(alias fmt, Args...)(char[] buffer, Args args)
                 {
                     case i:
                     {
-                        bufferWritten += formatArg(args[i], formatSpec, buffer[bufferWritten .. buffer.length]);                       
+                        bufferWritten += formatArg(args[i], formatSpec, buffer[bufferWritten .. buffer.length]);
                     } break outer;
                 }
                 
@@ -219,10 +229,38 @@ char[] bprint(alias fmt, Args...)(char[] buffer, Args args)
         }
         fmtCursor++;
     }
+    fmtCursor = fmt.length;
 
-    bufferWritten += copyToBuffer!fmt(buffer[bufferWritten..buffer.length], fmtCopyToBufferIndex, fmt.length);
+    bufferWritten += copyToBuffer!fmt(buffer[bufferWritten..buffer.length], fmtCopyToBufferIndex, fmtCursor);
     
     assert(bufferWritten < buffer.length);
     buffer[bufferWritten] = '\0';
     return buffer[0..bufferWritten];
+}
+
+void print(T)(T output)
+{
+    static assert(is(T == string) || is(T == char[]));
+    
+    version(Windows)
+    {
+        // TODO: Test on Windows!
+        import core.sys.windows;
+        auto std_out = GetStdHandle(STD_OUTPUT_HANDLE); // TODO: Make this global?
+        if(std_out)
+        {
+            WriteFile(std_out, output.ptr, output.length, null, null);        
+        }
+    }
+    version(linux)
+    {
+        import core.sys.posix.unistd;
+        enum int std_out = 1;
+        
+        write(std_out, output.ptr, output.length);
+    }
+    else
+    {
+        static assert(0, "Unsupported OS.");
+    }
 }
