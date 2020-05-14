@@ -6,17 +6,68 @@ module djinnprint;
 
 private @nogc nothrow:
 
+public enum useModuleConstructors = true;
 //version = assertOnTruncation;
+
+import std.traits;
+
+version(Posix)
+{
+    import core.sys.posix.unistd : write;
+    
+    alias FileHandle = int;
+    enum FileHandle stdOut = 1;
+    enum FileHandle stdErr = 2;
+    
+    void init(){};
+}
+else version(Windows)
+{
+    // TODO: Test on Windows
+    import core.sys.windows;
+    alias FileHandle = HANDLE;
+    __gshared FileHandle stdOut;
+    __gshared FileHandle stdErr;
+    
+    void init()
+    {
+        HANDLE stdOut = GetStdHandle(STD_OUTPUT_HANDLE);
+        HANDLE stdErr = GetStdHandle(STD_ERROR_HANDLE);
+    }
+    
+    static if (useModuleConstructors)
+    {
+        this()
+        {
+            init();
+        }
+    }
+}
+else
+{
+    static assert(0, "Unsupported OS.");
+}
+
+size_t length(const(char*) s)
+{
+    size_t result = 0;
+    
+    while(s[result] != '\0')
+    {
+        result++;
+    }
+    
+    return result;
+}
 
 ulong formatArg(T)(T t, in FormatSpec spec, char[] buffer)
 {
-    import std.traits;
-    
+
     ulong bytesWritten = 0;
     
     static if (isIntegral!T)
     {
-        bytesWritten = intToString(buffer, t, 10);   
+        bytesWritten = intToString(buffer, t, 10, spec);   
     }
     else static if (is(T == float))
     {
@@ -27,7 +78,16 @@ ulong formatArg(T)(T t, in FormatSpec spec, char[] buffer)
     }
     else static if(is(T == char*) || is(T == immutable(char)*))
     {
-        foreach(charIndex; 0..buffer.length)
+        version(assertOnTruncation)
+        {
+            bytesWritten = size_t.max;
+        }
+        else
+        {
+            bytesWritten = buffer.length - 1;
+        }
+    
+        foreach(charIndex; 0 .. buffer.length - 1)
         {
             buffer[charIndex] = t[charIndex];
             if(t[charIndex] == '\0')
@@ -35,6 +95,11 @@ ulong formatArg(T)(T t, in FormatSpec spec, char[] buffer)
                 bytesWritten = charIndex;
                 break;
             }
+        }
+        
+        version(assertOnTruncation)
+        {
+            assert(bytesWritten != size_t.max);
         }
     }
     else static if(is(T == char[]) || is(T == string))
@@ -58,6 +123,38 @@ ulong formatArg(T)(T t, in FormatSpec spec, char[] buffer)
     }
     
     return bytesWritten;
+}
+
+void formatArg(T)(T t, in FormatSpec spec, FileHandle file)
+{   
+    static if (isIntegral!T)
+    {
+        char[30] buffer;
+        auto length = intToString(buffer, t, 10, spec);
+        printFile(file, buffer[0 .. length]);
+    }
+    else static if (is(T == float))
+    {
+        // TODO: Eleminate our dependence on snprintf and use our own float formatting functions. Look to stb_sprintf?
+        // Note that even Phobos (the D standard library) used snprintf to format floats. 
+        import core.stdc.stdio : snprintf;
+        char[512] buffer;
+        snprintf(buffer.ptr, buffer.length, "%f", t);
+    }
+    else static if(is(T == char*) || is(T == const(char*)) || is(T == immutable(char)*))
+    {   
+        auto msg = t[0 .. length(t)];
+        printFile(file, msg);
+    }
+    else static if(is(T == char[]) || is(T == string))
+    {
+        printFile(file, t);
+    }
+    else
+    {
+        pragma(msg, "ERR in print.formatArg(...): Unhandled type " ~ T.stringof);
+        static assert(0);
+    }
 }
 
 struct FormatSpec
@@ -99,9 +196,8 @@ FormatSpec getFormatSpec(in char[] command)
     return result;
 }
 
-size_t intToString(T)(char[] buffer, T t, ubyte base)
+size_t intToString(T)(char[] buffer, T t, ubyte base, FormatSpec spec)
 {
-    import std.traits;
     import std.math;
     
     static assert(isIntegral!T);
@@ -151,25 +247,12 @@ size_t intToString(T)(char[] buffer, T t, ubyte base)
     }
     
     buffer[0..minToCopy] = conversion[finish..finish+minToCopy];
-    
     return minToCopy;
 }
 
 public:
 
-char[] format(alias fmt, Args...)(char[] buffer, Args args)
-{
-    size_t copyToBuffer(alias fmt)(char[] buffer, size_t fmtStart, size_t fmtEnd)
-    {
-        size_t fmtDiff = fmtEnd - fmtStart;
-        size_t bytesToCopy = buffer.length < fmtDiff ? buffer.length : fmtDiff;
-        buffer[0..bytesToCopy] = fmt[fmtStart..fmtStart+bytesToCopy];
-        return bytesToCopy;
-    }
-    
-    size_t bufferWritten = 0;
-    enum outputPolicy = ``;
-
+enum printCommon = `
     size_t fmtCursor = 0;
     size_t fmtCopyToBufferIndex = 0;
     
@@ -180,14 +263,14 @@ char[] format(alias fmt, Args...)(char[] buffer, Args args)
             if (fmtCursor < fmt.length - 1 && fmt[fmtCursor+1] == '{')
             {
                 fmtCursor++;
-                bufferWritten += copyToBuffer!fmt(buffer[bufferWritten..buffer.length], fmtCopyToBufferIndex, fmtCursor);
+                mixin(outputPolicy);
                 fmtCursor++;
                 fmtCopyToBufferIndex = fmtCursor;
                 
                 continue;
             }
             
-            bufferWritten += copyToBuffer!fmt(buffer[bufferWritten..buffer.length], fmtCopyToBufferIndex, fmtCursor);
+            mixin(outputPolicy);
         
             fmtCursor++;
             size_t commandStart = fmtCursor;
@@ -217,7 +300,7 @@ char[] format(alias fmt, Args...)(char[] buffer, Args args)
                 {
                     case i:
                     {
-                        bufferWritten += formatArg(args[i], formatSpec, buffer[bufferWritten .. buffer.length]);
+                        mixin(formatPolicy);
                     } break outer;
                 }
                 
@@ -231,33 +314,83 @@ char[] format(alias fmt, Args...)(char[] buffer, Args args)
     }
     fmtCursor = fmt.length;
 
-    bufferWritten += copyToBuffer!fmt(buffer[bufferWritten..buffer.length], fmtCopyToBufferIndex, fmtCursor);
+    mixin(outputPolicy);
+`;
+
+char[] format(alias fmt, Args...)(char[] buffer, Args args)
+if(isSomeString!(typeof(fmt)) || isSomeChar!(typeof(fmt[0])))
+{
+    size_t copyToBuffer(alias fmt)(char[] buffer, size_t fmtStart, size_t fmtEnd)
+    {
+        size_t fmtDiff = fmtEnd - fmtStart;
+        size_t bytesToCopy = buffer.length < fmtDiff ? buffer.length : fmtDiff;
+        buffer[0..bytesToCopy] = fmt[fmtStart..fmtStart+bytesToCopy];
+        return bytesToCopy;
+    }
     
-    assert(bufferWritten < buffer.length);
-    buffer[bufferWritten] = '\0';
+    size_t bufferWritten = 0;
+    enum outputPolicy = `bufferWritten += copyToBuffer!fmt(buffer[bufferWritten..buffer.length], fmtCopyToBufferIndex, fmtCursor);`;
+    enum formatPolicy = `bufferWritten += formatArg(args[i], formatSpec, buffer[bufferWritten .. buffer.length]);`;
+    
+    mixin(printCommon);
+    
+    //assert(bufferWritten < buffer.length);
+    buffer[buffer.length-1] = '\0';
     return buffer[0..bufferWritten];
 }
 
-void print(T)(T output)
+void printOut(alias fmt, Args...)(Args args)
+if(isSomeString!(typeof(fmt)) || isSomeChar!(typeof(fmt[0])))
 {
-    static assert(is(T == string) || is(T == char[]));
+    FileHandle file = stdOut;
     
-    version(Windows)
+    enum outputPolicy = `printFile(file, fmt[fmtCopyToBufferIndex..fmtCursor]);`;
+    enum formatPolicy = `formatArg(args[i], formatSpec, file);`;
+
+    mixin(printCommon);
+}
+
+void printOut(T)(T msg)
+if(isSomeString!T || isSomeChar!(typeof(msg[0])))
+{
+    FileHandle file = stdOut;
+    printFile(file, msg);
+}
+
+void printErr(alias fmt, Args...)(Args args)
+if(isSomeString!(typeof(fmt)) || isSomeChar!(typeof(fmt[0])))
+{
+    FileHandle file = stdErr;
+    
+    enum outputPolicy = `printFile(file, fmt[fmtCopyToBufferIndex..fmtCursor]);`;
+    enum formatPolicy = `formatArg(args[i], formatSpec, file);`;
+
+    mixin(printCommon);
+}
+
+void printErr(T)(T msg)
+if(isSomeString!T || isSomeChar!(typeof(msg[0])))
+{
+    FileHandle file = stdErr;
+    printFile(file, msg);
+}
+
+void printFile(T)(FileHandle file, T msg)
+if(isSomeString!T || isSomeChar!(typeof(msg[0])))
+{
+    version(Posix)
     {
-        // TODO: Test on Windows!
-        import core.sys.windows;
-        auto std_out = GetStdHandle(STD_OUTPUT_HANDLE); // TODO: Make this global?
-        if(std_out)
+        if (file != -1)
         {
-            WriteFile(std_out, output.ptr, output.length, null, null);        
+            write(file, msg.ptr, msg.length);        
         }
     }
-    version(linux)
+    else version(Windows)
     {
-        import core.sys.posix.unistd;
-        enum int std_out = 1;
-        
-        write(std_out, output.ptr, output.length);
+        if(file != INVALID_HANDLE_VALUE)
+        {
+            WriteFile(file, msg.ptr, msg.length, null, null);        
+        }
     }
     else
     {

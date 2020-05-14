@@ -1,18 +1,23 @@
 # djinnprint
 
-Type-safe, @nogc functions used to format data as text.
+Type-safe, @nogc functions used to format data as text. Also -betterC compatible.
 
 ## Example
 
 ```D    
+// Format to a buffer:
 char[512] buffer;
-print(format!"The numbers are {2}, {0}, and {1}."(buffer, 1, 2, 3));
+printOut(format!"The numbers are {2}, {0}, and {1}.\n"(buffer, 1, 2, 3));
+
+// Format directly to stdout:
+printOut!"The numbers are {1}, {2}, and {0}.\n"(1, 2, 3);
 ```
 
 ### Output
 
 ```
 The numbers are 3, 1, and 2.
+The numbers are 2, 3, and 1.
 ```
 
 ## About
@@ -21,15 +26,13 @@ The D programming language employs a garbage collector to automate memory manage
 
 For a demonstration of this code, see the examples.d file.
 
-Note that this project is also -betterC compatible.
-
 ## Usage
 
 ### Format Specifiers
 
-Format specifiers are sections of the format string that will be replaced with a formatted version of a given argument. A format specifier begins with an open curly brace and ends with a closed curly brace. The text between these characters determines which argument will be formatted and in what way. The format specifier must not contain whitespace and and must begin with a decimal indicating the index of the argument to format (starting with index 0). 
+The formatting and printing functions provided by djinnprint each take a format string as a template argument. This string will be copied to the output as-is, except for any format specifiers. A format specifier is a portion of the format string that begins with a single open curly brace ("{") and ends with a closed curly brace ("}"). The text between these characters determines which argument will be formatted and in what way. The format specifier must not contain whitespace and and must begin with a number indicating the index of the argument whose value is to be formatted (indices start at zero). 
 
-If two open curly braces appear next to one another djinnprint will not interpret either characters as the start of a format specifier; instead only one open curly brace will be copied and the rest of the format string will be copied as usual.
+If two open curly braces appear next to one another djinnprint will not interpret either characters as the start of a format specifier; instead only one open curly brace will be copied to the output and the rest of the format string will be copied as usual.
 
 Note that formatting options are planned but not currently implemented.
 
@@ -37,9 +40,9 @@ Note that formatting options are planned but not currently implemented.
 
 The format function is used to format arguments into a fixed size buffer, similar to the snprintf function in C. The format string is passed as a template argument. The function then takes the buffer followed by variadic arguments. The format string is copied into the buffer with each format specifier replaced by the textual representation of a given argument's value. To ensure compatibility with C the end of the resulting string is null terminated. Even if the resulting string is too long to fit in the buffer and is truncated, the last element of the buffer is the null terminator. A slice is returned containing how much was written into the buffer.
 
-### print()
+### printOut(), printErr()
 
-The print function simply takes a string or character array and prints the contents to standard output.
+Much like the format() function, these functions take a format string as a template argument. The format string is copied to an output stream with each format specifier replaced by the textual representation of a given argument's value. The result of printOut is sent to the standard output stream while the result of printErr is sent to the standard error stream.
 
 ## Status
 
@@ -47,14 +50,15 @@ This project is currently a very early proof-of-concept and is in no way product
 
 ### Todo
 
-* Additional function for printing to files.
-* Formatting options for variables.
+* Add formatting options for variables.
 * Support for additional data types (pointers, structs, etc.).
+* Testing on Windows.
 * Thorough testing.
+* Float to string conversion that doesn't rely on snprintf.
 
 ## Installation
 
-Simply copy the file djinnprint.d to the source tree of your project and import the module as you would any other D source code.
+Simply copy the file djinnprint.d to the source tree of your project and import the module as you would any other D source code. It's that simple.
 
 ## License
 
