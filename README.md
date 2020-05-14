@@ -44,6 +44,8 @@ The format function is used to format arguments into a fixed size buffer, simila
 
 Much like the format() function, these functions take a format string as a template argument. The format string is copied to an output stream with each format specifier replaced by the textual representation of a given argument's value. The result of printOut is sent to the standard output stream while the result of printErr is sent to the standard error stream.
 
+For convenience, alternate versions of printOut() and printErr() are provided that simply take a string and send it to the standard output or standard error stream, respectively. This is especially useful for quickly logging the result of the format() function.
+
 ## Status
 
 This project is currently a very early proof-of-concept and is in no way production ready. Further work is planned, however.
