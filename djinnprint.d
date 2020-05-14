@@ -76,7 +76,7 @@ ulong formatArg(T)(T t, in FormatSpec spec, char[] buffer)
         import core.stdc.stdio : snprintf;
         bytesWritten = snprintf(buffer.ptr, buffer.length, "%f", t);
     }
-    else static if(is(T == char*) || is(T == immutable(char)*))
+    else static if(is(T == char*) || is(T == const(char)*) || is(T == immutable(char)*))
     {
         version(assertOnTruncation)
         {
@@ -141,7 +141,7 @@ void formatArg(T)(T t, in FormatSpec spec, FileHandle file)
         char[512] buffer;
         snprintf(buffer.ptr, buffer.length, "%f", t);
     }
-    else static if(is(T == char*) || is(T == const(char*)) || is(T == immutable(char)*))
+    else static if(is(T == char*) || is(T == const(char)*) || is(T == immutable(char)*))
     {   
         auto msg = t[0 .. length(t)];
         printFile(file, msg);
