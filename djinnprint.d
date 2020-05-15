@@ -62,7 +62,6 @@ size_t length(const(char*) s)
 
 ulong formatArg(T)(T t, in FormatSpec spec, char[] buffer)
 {
-
     ulong bytesWritten = 0;
     
     static if (isIntegral!T)
@@ -116,6 +115,30 @@ ulong formatArg(T)(T t, in FormatSpec spec, char[] buffer)
         
         buffer[0..bytesWritten] = t[0..bytesWritten];
     }
+    else static if(is(T == struct))
+    {
+        // TODO: Test how this behaves when it runs out of room.
+        // TODO: Assert on truncation
+        if (bytesWritten < buffer.length) buffer[bytesWritten++] = '(';
+        alias allMembers = __traits(allMembers, T);
+        static foreach(i, memberString; allMembers)
+        {
+            // TODO: Format more than builtin members
+            static if (isBuiltinType!(typeof(mixin(t.stringof ~ "." ~ memberString))))
+            {
+                bytesWritten += formatArg(mixin(t.stringof ~ "." ~ memberString), spec, buffer[bytesWritten .. $]);
+                static if(i < allMembers.length - 1)
+                {
+                    if (bytesWritten + 1 < buffer.length)
+                    {
+                        buffer[bytesWritten++] = ',';
+                        buffer[bytesWritten++] = ' ';
+                    }
+                }
+            }
+        }
+        if (bytesWritten < buffer.length) buffer[bytesWritten++] = ')';
+    }
     else
     {
         pragma(msg, "ERR in print.formatArg(...): Unhandled type " ~ T.stringof);
@@ -139,7 +162,8 @@ void formatArg(T)(T t, in FormatSpec spec, FileHandle file)
         // Note that even Phobos (the D standard library) used snprintf to format floats. 
         import core.stdc.stdio : snprintf;
         char[512] buffer;
-        snprintf(buffer.ptr, buffer.length, "%f", t);
+        auto written = snprintf(buffer.ptr, buffer.length, "%f", t);
+        printFile(file, buffer[0..written]);
     }
     else static if(is(T == char*) || is(T == const(char)*) || is(T == immutable(char)*))
     {   
@@ -149,6 +173,21 @@ void formatArg(T)(T t, in FormatSpec spec, FileHandle file)
     else static if(is(T == char[]) || is(T == string))
     {
         printFile(file, t);
+    }
+    else static if(is(T == struct))
+    {
+        printFile(file, "(");
+        alias allMembers = __traits(allMembers, T);
+        static foreach(i, memberString; allMembers)
+        {
+            // TODO: Format more than builtin members
+            static if (isBuiltinType!(typeof(mixin(t.stringof ~ "." ~ memberString))))
+            {
+                formatArg(mixin(t.stringof ~ "." ~ memberString), spec, file);
+                static if(i < allMembers.length - 1) printFile(file, ", ");
+            }
+        }
+        printFile(file, ")");
     }
     else
     {
@@ -310,7 +349,8 @@ enum printCommon = `
                 } break outer;
             }
         }
-        fmtCursor++;
+        else
+            fmtCursor++;
     }
     fmtCursor = fmt.length;
 

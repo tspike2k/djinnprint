@@ -98,6 +98,19 @@ void printOutExamples()
     
     printOut!"\nLong  string: `{0}`\n"(longString);
     printOut!"\nLong cstring: `{0}`\n"(longString.ptr);
+    
+    TestStruct test;
+    test.a = 1;
+    test.b = 2;
+    test.f = 3.0f;
+    
+    printOut!"The struct is: {0}{1}\n"(typeof(test).stringof, test);
+}
+
+struct TestStruct
+{
+    int a, b;
+    float f;
 }
 
 extern(C) int main()
