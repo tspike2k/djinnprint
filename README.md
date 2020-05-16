@@ -54,7 +54,7 @@ In the future the toPrint enum will likely be changed to allow arbitrary logic t
 
 ### Initializing djinnprint
 
-Under some platforms (such as Windows) djinnprint will need to be initialized in order to setup pointers to the standard output/error streams. This is done automatically if module constructors are enabled. If module constructors are disabled (in the case of compiling without the D-runtime or using the -betterC compiler switch in DMD) djinnprint.useModuleConstructors must be set to false and djinnprint.init should be called before the calls to any print functions. 
+Under some platforms (such as Windows) djinnprint will need to be initialized in order to set up pointers to the standard output/error streams. This is done automatically if module constructors are enabled. If module constructors are disabled (in the case of compiling without the D-runtime or using the -betterC compiler switch in DMD) djinnprint.useModuleConstructors must be set to false and djinnprint.init should be called before calling any of the printing functions provided by djinnprint. 
 
 ## Status
 
