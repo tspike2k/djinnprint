@@ -4,6 +4,9 @@
 
 module djinnprint;
 
+// TODO: Do not use .stringof for code generation. See this page for details:
+// https://dlang.org/spec/property.html#stringof
+
 private @nogc nothrow:
 
 public enum useModuleConstructors = true;
@@ -119,7 +122,7 @@ ulong formatArg(T)(T t, in FormatSpec spec, char[] buffer)
     {
         // TODO: Test how this behaves when it runs out of room.
         // TODO: Assert on truncation
-        if (bytesWritten < buffer.length) buffer[bytesWritten++] = '(';
+        bytesWritten += safeCopy(buffer, "(");
         alias allMembers = __traits(allMembers, T);
         static foreach(i, memberString; allMembers)
         {
@@ -129,15 +132,32 @@ ulong formatArg(T)(T t, in FormatSpec spec, char[] buffer)
                 bytesWritten += formatArg(mixin(t.stringof ~ "." ~ memberString), spec, buffer[bytesWritten .. $]);
                 static if(i < allMembers.length - 1)
                 {
-                    if (bytesWritten + 1 < buffer.length)
-                    {
-                        buffer[bytesWritten++] = ',';
-                        buffer[bytesWritten++] = ' ';
-                    }
+                    bytesWritten += safeCopy(buffer[bytesWritten .. $], ", ");
                 }
             }
         }
-        if (bytesWritten < buffer.length) buffer[bytesWritten++] = ')';
+        
+        bytesWritten += safeCopy(buffer[bytesWritten .. $], ")");
+    }
+    else static if(is(T == union))
+    {
+        static if (__traits(hasMember, T, "toPrint"))
+        {
+            bytesWritten += safeCopy(buffer[bytesWritten .. $], "(");
+            static foreach(i, memberString; t.toPrint)
+            {
+                bytesWritten += formatArg(mixin("t." ~ memberString), spec, buffer[bytesWritten .. $]);
+                static if (i < t.toPrint.length - 1)
+                {
+                    bytesWritten += safeCopy(buffer[bytesWritten .. $], ", ");
+                }
+            }
+            bytesWritten += safeCopy(buffer[bytesWritten .. $], ")");
+        }
+        else
+        {
+            bytesWritten = safeCopy(buffer[bytesWritten .. $], T.stringof);
+        }
     }
     else
     {
@@ -189,6 +209,26 @@ void formatArg(T)(T t, in FormatSpec spec, FileHandle file)
         }
         printFile(file, ")");
     }
+    else static if(is(T == union))
+    {
+        printFile(file, "(");
+        static if (__traits(hasMember, T, "toPrint"))
+        {
+            static foreach(i, memberString; t.toPrint)
+            {
+                formatArg(mixin("t." ~ memberString), spec, file);
+                static if (i < t.toPrint.length - 1) printFile(file, ", ");
+            }
+        }
+        else
+        {
+            // TODO: Rather than throw an error, should we simply print the name of the type?
+            // This would allow people to have some unions that simply aren't printed.
+            pragma(msg, "ERR: No toPrint array for union " ~ T.stringof ~ ".");
+            static assert(0);
+        }
+        printFile(file, ")");
+    }
     else
     {
         pragma(msg, "ERR in print.formatArg(...): Unhandled type " ~ T.stringof);
@@ -233,6 +273,14 @@ FormatSpec getFormatSpec(in char[] command)
     result.argIndex = argIndex;
     
     return result;
+}
+
+size_t safeCopy(T)(char[] dest, T source)
+if(isSomeString!T || isSomeChar!(source([0])))
+{
+    size_t bytesToCopy = dest.length < source.length ? dest.length : source.length;
+    dest[0 .. bytesToCopy] = source[0 .. bytesToCopy];
+    return bytesToCopy;
 }
 
 size_t intToString(T)(char[] buffer, T t, ubyte base, FormatSpec spec)
@@ -359,17 +407,9 @@ enum printCommon = `
 
 char[] format(alias fmt, Args...)(char[] buffer, Args args)
 if(isSomeString!(typeof(fmt)) || isSomeChar!(typeof(fmt[0])))
-{
-    size_t copyToBuffer(alias fmt)(char[] buffer, size_t fmtStart, size_t fmtEnd)
-    {
-        size_t fmtDiff = fmtEnd - fmtStart;
-        size_t bytesToCopy = buffer.length < fmtDiff ? buffer.length : fmtDiff;
-        buffer[0..bytesToCopy] = fmt[fmtStart..fmtStart+bytesToCopy];
-        return bytesToCopy;
-    }
-    
+{  
     size_t bufferWritten = 0;
-    enum outputPolicy = `bufferWritten += copyToBuffer!fmt(buffer[bufferWritten..buffer.length], fmtCopyToBufferIndex, fmtCursor);`;
+    enum outputPolicy = `bufferWritten += safeCopy(buffer[bufferWritten..buffer.length], fmt[fmtCopyToBufferIndex .. fmtCursor]);`;
     enum formatPolicy = `bufferWritten += formatArg(args[i], formatSpec, buffer[bufferWritten .. buffer.length]);`;
     
     mixin(printCommon);
@@ -384,7 +424,7 @@ if(isSomeString!(typeof(fmt)) || isSomeChar!(typeof(fmt[0])))
 {
     FileHandle file = stdOut;
     
-    enum outputPolicy = `printFile(file, fmt[fmtCopyToBufferIndex..fmtCursor]);`;
+    enum outputPolicy = `printFile(file, fmt[fmtCopyToBufferIndex .. fmtCursor]);`;
     enum formatPolicy = `formatArg(args[i], formatSpec, file);`;
 
     mixin(printCommon);

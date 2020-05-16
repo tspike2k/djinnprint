@@ -46,6 +46,16 @@ Much like the format() function, these functions take a format string as a templ
 
 For convenience, alternate versions of printOut() and printErr() are provided that simply take a string and send it to the standard output or standard error stream, respectively. This is especially useful for quickly logging the result of the format() function.
 
+### Formatting unions (experimental)
+
+Unions are an odd case. Under some conditions certain members will be in an invalid state. This could be mitigated by asking the user to supply a toString() method with every union they wish to format. But the union itself shouldn't need to know HOW to format their arguments. After all, that's the responsibility of the formatting functions. Rather the responsibility of the union should be to tell the library which members should be formatted. This is done by adding a toPrint enum on the union. This enum is an array of strings containing the names of every member that should be formatted. If no such enum is provided the resulting output will be the identifier of the union itself.
+
+In the future the toPrint enum will likely be changed to allow arbitrary logic to be run by the formatting functions. 
+
+### Initializing djinnprint
+
+Under some platforms (such as Windows) djinnprint will need to be initialized in order to setup pointers to the standard output/error streams. This is done automatically if module constructors are enabled. If module constructors are disabled (in the case of compiling without the D-runtime or using the -betterC compiler switch in DMD) djinnprint.useModuleConstructors must be set to false and djinnprint.init should be called before the calls to any print functions. 
+
 ## Status
 
 This project is currently a very early proof-of-concept and is in no way production ready. Further work is planned, however.
@@ -57,6 +67,7 @@ This project is currently a very early proof-of-concept and is in no way product
 * Testing on Windows.
 * Thorough testing.
 * Float to string conversion that doesn't rely on snprintf.
+* Improve union formatting by allowing arbitrary logic in the toPrint enum that will determine the list of members to format.
 
 ## Installation
 

@@ -69,6 +69,16 @@ void formatExamples()
     
     printOut(format!"\nLong  string: `{0}`\n"(buffer, longString));
     printOut(format!"\n\nLong cstring: `{0}`\n"(buffer, longString.ptr));
+    
+    TestStruct test;
+    test.a = 1;
+    test.b = 2;
+    test.f = 3.0f;
+    
+    printOut(format!"\nThe struct is: {0}{1}\n"(buffer, typeof(test).stringof, test));
+    
+    Vect2 vec = Vect2(2.0f, 3.0f);
+    printOut(format!"Vect2 vec: {0}\n"(buffer, vec));
 }
 
 void printOutExamples()
@@ -105,6 +115,9 @@ void printOutExamples()
     test.f = 3.0f;
     
     printOut!"The struct is: {0}{1}\n"(typeof(test).stringof, test);
+    
+    Vect2 vec = Vect2(2.0f, 3.0f);
+    printOut!"Vect2 vec: {0}\n"(vec);
 }
 
 struct TestStruct
@@ -112,6 +125,17 @@ struct TestStruct
     int a, b;
     float f;
 }
+
+union Vect2
+{
+    struct {float x = 0.0f, y = 0.0f;};
+    struct {float u, v;};
+    float[2] c;
+    
+    enum string[] toPrint = ["x", "y"];
+}
+
+static assert(Vect2.sizeof == float.sizeof*2);
 
 extern(C) int main()
 {    
@@ -130,6 +154,6 @@ extern(C) int main()
     char[28] fmt = cast(char[28])"Static array fmt test #{0}.\n";
     printOut(format!fmt(buffer, 1));
     printOut!fmt(2);
-    
+ 
     return 0;
 }
