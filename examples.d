@@ -128,11 +128,9 @@ struct TestStruct
 
 union Vect2
 {
-    struct {float x = 0.0f, y = 0.0f;};
+    @toPrint struct {float x = 0.0f, y = 0.0f;};
     struct {float u, v;};
     float[2] c;
-    
-    enum string[] toPrint = ["x", "y"];
 }
 
 static assert(Vect2.sizeof == float.sizeof*2);

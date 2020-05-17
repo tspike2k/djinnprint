@@ -7,10 +7,23 @@ module djinnprint;
 // TODO: Do not use .stringof for code generation. See this page for details:
 // https://dlang.org/spec/property.html#stringof
 
+// TODO: Add array formatting
+
+// TODO: Allow user to print tagged unions. Have a UDA to tell what the tag variable is on the union, 
+// and a UDA to say which state should be prented for which tag:
+//
+// @unionTag("common.entityType") union {
+// @toPrintWhen("EntityType.COMMON") EntityCommon common;
+// @toPrintWhen("EntityType.DOOR")   EntityDoor   door;
+// @toPrintWhen("EntityType.ANIMAL") EntityDoor   animal;
+// }
+
 private @nogc nothrow:
 
+public enum toPrint;
 public enum useModuleConstructors = true;
 //version = assertOnTruncation;
+//version = assertOnUnhandledUnion;
 
 import std.traits;
 
@@ -141,13 +154,15 @@ ulong formatArg(T)(T t, in FormatSpec spec, char[] buffer)
     }
     else static if(is(T == union))
     {
-        static if (__traits(hasMember, T, "toPrint"))
+        alias toPrintMembers = getSymbolsByUDA!(T, toPrint);
+        static if (toPrintMembers.length > 0)
         {
             bytesWritten += safeCopy(buffer[bytesWritten .. $], "(");
-            static foreach(i, memberString; t.toPrint)
+            static foreach(i, member; toPrintMembers)
             {
-                bytesWritten += formatArg(mixin("t." ~ memberString), spec, buffer[bytesWritten .. $]);
-                static if (i < t.toPrint.length - 1)
+                bytesWritten += formatArg(mixin("t." ~ member.stringof), spec, buffer[bytesWritten .. $]);
+                
+                static if (i < toPrintMembers.length - 1)
                 {
                     bytesWritten += safeCopy(buffer[bytesWritten .. $], ", ");
                 }
@@ -156,6 +171,13 @@ ulong formatArg(T)(T t, in FormatSpec spec, char[] buffer)
         }
         else
         {
+            version(assertOnUnhandledUnion)
+            {
+                pragma(msg, "ERR: Unhandled union " ~ T.stringof ~ ". No @toPrint UDA found.");
+                static assert(0);
+            }
+        
+            // TODO: Allow user to enable assertions of union is not print compatible
             bytesWritten = safeCopy(buffer[bytesWritten .. $], T.stringof);
         }
     }
@@ -211,23 +233,30 @@ void formatArg(T)(T t, in FormatSpec spec, FileHandle file)
     }
     else static if(is(T == union))
     {
-        printFile(file, "(");
-        static if (__traits(hasMember, T, "toPrint"))
+        alias toPrintMembers = getSymbolsByUDA!(T, toPrint);
+        static if (toPrintMembers.length > 0)
         {
-            static foreach(i, memberString; t.toPrint)
+            printFile(file, "(");
+            static foreach(i, member; toPrintMembers)
             {
-                formatArg(mixin("t." ~ memberString), spec, file);
-                static if (i < t.toPrint.length - 1) printFile(file, ", ");
+                formatArg(mixin("t." ~ member.stringof), spec, file);
+                
+                static if (i < toPrintMembers.length - 1)
+                {
+                    printFile(file, ", ");
+                }
             }
+            printFile(file, ")");
         }
         else
         {
-            // TODO: Rather than throw an error, should we simply print the name of the type?
-            // This would allow people to have some unions that simply aren't printed.
-            pragma(msg, "ERR: No toPrint array for union " ~ T.stringof ~ ".");
-            static assert(0);
+            version(assertOnUnhandledUnion)
+            {
+                pragma(msg, "ERR: Unhandled union " ~ T.stringof ~ ". No @toPrint UDA found.");
+                static assert(0);
+            }
+            printFile(file, T.stringof);
         }
-        printFile(file, ")");
     }
     else
     {

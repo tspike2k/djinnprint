@@ -48,9 +48,9 @@ For convenience, alternate versions of printOut() and printErr() are provided th
 
 ### Formatting unions (experimental)
 
-Unions are an odd case. Under some conditions certain members will be in an invalid state. This could be mitigated by asking the user to supply a toString() method with every union they wish to format. But the union itself shouldn't need to know HOW to format their arguments. After all, that's the responsibility of the formatting functions. Rather the responsibility of the union should be to tell the library which members should be formatted. This is done by adding a toPrint enum on the union. This enum is an array of strings containing the names of every member that should be formatted. If no such enum is provided the resulting output will be the identifier of the union itself.
+Unions are an odd case. As union members share the same memory layout, formatting each member is redundant. Even worse, under some conditions certain members will be in an invalid state. This could be mitigated by asking the user to supply a toString() method with every union they wish to format. But the union itself shouldn't need to know HOW to format their arguments. After all, that's the responsibility of the formatting functions. Rather the responsibility of the union should be to tell the library which members should be formatted. This is done by marking union members that should always be formatted with the @toPrint user-defined attribute.
 
-In the future the toPrint enum will likely be changed to allow arbitrary logic to be run by the formatting functions. 
+UDAs for formatting tagged unions is planned.
 
 ### Initializing djinnprint
 
