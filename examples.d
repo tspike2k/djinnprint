@@ -40,6 +40,13 @@ sword and free the U.S.
 from the evil clutches of
 Darc Seed.`;
 
+enum TestEnum
+{
+    ALPHA,
+    BETA,
+    GAMMA,
+}
+
 void formatExamples()
 {
     char[512] buffer;
@@ -76,6 +83,9 @@ void formatExamples()
     test.f = 3.0f;
     
     printOut(format!"\nThe struct is: {0}{1}\n"(buffer, typeof(test).stringof, test));
+    
+    TestEnum te = TestEnum.BETA;
+    printOut(format!"The enum is {0}\n"(buffer, te));
     
     Vect2 vec = Vect2(2.0f, 3.0f);
     printOut(format!"Vect2 vec: {0}\n"(buffer, vec));
@@ -115,6 +125,9 @@ void printOutExamples()
     test.f = 3.0f;
     
     printOut!"The struct is: {0}{1}\n"(typeof(test).stringof, test);
+    
+    TestEnum te = TestEnum.BETA;
+    printOut!"The enum is {0}\n"(te);
     
     Vect2 vec = Vect2(2.0f, 3.0f);
     printOut!"Vect2 vec: {0}\n"(vec);

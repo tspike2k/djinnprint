@@ -80,7 +80,17 @@ ulong formatArg(T)(T t, in FormatSpec spec, char[] buffer)
 {
     ulong bytesWritten = 0;
     
-    static if (isIntegral!T)
+    static if (is(T == enum))
+    {
+        static foreach (i, member; EnumMembers!T)
+        {
+            if (t == member)
+            {
+                bytesWritten = safeCopy(buffer, __traits(identifier, EnumMembers!T[i]));
+            }
+        }
+    }
+    else static if (isIntegral!T)
     {
         bytesWritten = intToString(buffer, t, 10, spec);   
     }
@@ -192,7 +202,17 @@ ulong formatArg(T)(T t, in FormatSpec spec, char[] buffer)
 
 void formatArg(T)(T t, in FormatSpec spec, FileHandle file)
 {   
-    static if (isIntegral!T)
+    static if (is(T == enum))
+    {
+        static foreach (i, member; EnumMembers!T)
+        {
+            if (t == member)
+            {
+                printFile(file, __traits(identifier, EnumMembers!T[i]));
+            }
+        }
+    }
+    else static if (isIntegral!T)
     {
         char[30] buffer;
         auto length = intToString(buffer, t, 10, spec);
