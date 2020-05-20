@@ -53,7 +53,7 @@ else version(Windows)
     
     static if (useModuleConstructors)
     {
-        this()
+        static this()
         {
             init();
         }
@@ -149,14 +149,10 @@ ulong formatArg(T)(T t, in FormatSpec spec, char[] buffer)
         alias allMembers = __traits(allMembers, T);
         static foreach(i, memberString; allMembers)
         {
-            // TODO: Format more than builtin members
-            static if (isBuiltinType!(typeof(mixin(t.stringof ~ "." ~ memberString))))
+            bytesWritten += formatArg(mixin("t." ~ memberString), spec, buffer[bytesWritten .. $]);
+            static if(i < allMembers.length - 1)
             {
-                bytesWritten += formatArg(mixin(t.stringof ~ "." ~ memberString), spec, buffer[bytesWritten .. $]);
-                static if(i < allMembers.length - 1)
-                {
-                    bytesWritten += safeCopy(buffer[bytesWritten .. $], ", ");
-                }
+                bytesWritten += safeCopy(buffer[bytesWritten .. $], ", ");
             }
         }
         
@@ -171,7 +167,6 @@ ulong formatArg(T)(T t, in FormatSpec spec, char[] buffer)
             static foreach(i, member; toPrintMembers)
             {
                 bytesWritten += formatArg(mixin("t." ~ member.stringof), spec, buffer[bytesWritten .. $]);
-                
                 static if (i < toPrintMembers.length - 1)
                 {
                     bytesWritten += safeCopy(buffer[bytesWritten .. $], ", ");
@@ -242,11 +237,10 @@ void formatArg(T)(T t, in FormatSpec spec, FileHandle file)
         alias allMembers = __traits(allMembers, T);
         static foreach(i, memberString; allMembers)
         {
-            // TODO: Format more than builtin members
-            static if (isBuiltinType!(typeof(mixin(t.stringof ~ "." ~ memberString))))
+            formatArg(mixin("t." ~ memberString), spec, file);
+            static if (i < allMembers.length - 1)
             {
-                formatArg(mixin(t.stringof ~ "." ~ memberString), spec, file);
-                static if(i < allMembers.length - 1) printFile(file, ", ");
+                printFile(file, ", ");
             }
         }
         printFile(file, ")");
@@ -260,7 +254,6 @@ void formatArg(T)(T t, in FormatSpec spec, FileHandle file)
             static foreach(i, member; toPrintMembers)
             {
                 formatArg(mixin("t." ~ member.stringof), spec, file);
-                
                 static if (i < toPrintMembers.length - 1)
                 {
                     printFile(file, ", ");

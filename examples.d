@@ -47,6 +47,18 @@ enum TestEnum
     GAMMA,
 }
 
+struct Inner
+{
+    TestEnum e;
+    int a, b;
+}
+
+struct Outer
+{
+    Inner inner;
+    float x;
+}
+
 void formatExamples()
 {
     char[512] buffer;
@@ -89,6 +101,9 @@ void formatExamples()
     
     Vect2 vec = Vect2(2.0f, 3.0f);
     printOut(format!"Vect2 vec: {0}\n"(buffer, vec));
+    
+    Outer outer = Outer(Inner(TestEnum.GAMMA, 2, 4), 3.1415f);
+    printOut(format!"outer == {0}\n"(buffer, outer));
 }
 
 void printOutExamples()
@@ -131,6 +146,9 @@ void printOutExamples()
     
     Vect2 vec = Vect2(2.0f, 3.0f);
     printOut!"Vect2 vec: {0}\n"(vec);
+    
+    Outer outer = Outer(Inner(TestEnum.GAMMA, 2, 4), 3.1415f);
+    printOut!"outer == {0}\n"(outer);
 }
 
 struct TestStruct
