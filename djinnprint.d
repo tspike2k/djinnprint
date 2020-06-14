@@ -431,7 +431,7 @@ if(isIntegral!T)
     {
         import std.math : abs, sgn;
         T sign = cast(T)sgn(t);
-        t = abs(sign); // NOTE: Strip off the sign to prevent the mod operator from giving us a negative array index.
+        t = abs(t); // NOTE: Strip off the sign to prevent the mod operator from giving us a negative array index.
     }
     
     char[30] conversion; // NOTE: This should be plenty large enough to hold even the maximum value of a ulong.
