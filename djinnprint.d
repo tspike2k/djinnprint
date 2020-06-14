@@ -7,21 +7,43 @@ module djinnprint;
 // TODO: Do not use .stringof for code generation. See this page for details:
 // https://dlang.org/spec/property.html#stringof
 
-// TODO: Add array formatting
+// TODO: Bool printing
 
 // TODO: Allow user to print tagged unions. Have a UDA to tell what the tag variable is on the union, 
 // and a UDA to say which state should be prented for which tag:
 //
 // @unionTag("common.entityType") union {
-// @toPrintWhen("EntityType.COMMON") EntityCommon common;
-// @toPrintWhen("EntityType.DOOR")   EntityDoor   door;
-// @toPrintWhen("EntityType.ANIMAL") EntityDoor   animal;
+//     @toPrintWhen("EntityType.COMMON") EntityCommon common;
+//     @toPrintWhen("EntityType.DOOR")   EntityDoor   door;
+//     @toPrintWhen("EntityType.ANIMAL") EntityDoor   animal;
 // }
+//
+// Or, perhaps more cleanly, a UDA that states the tag to switch on AND the variables to print based on which value:
+// 
+// @toPrintWhen("common.entityType",
+// [
+//     UnionCase(EntityType.COMMON, "common"),
+//     UnionCase(EntityType.DOOR,   "door"),
+//     UnionCase(EntityType.ANIMAL, "animal"),
+// ]) union {
+//     EntityCommon common;
+//     EntityDoor   door;
+//     EntityDoor   animal;
+// }
+//
+// THAT looks much better.
 
 private @nogc nothrow:
 
 public enum toPrint;
 public enum useModuleConstructors = true;
+
+public struct toPrintWhen
+{
+    string unionTag;
+    string[] casesAndMembers;
+}
+
 //version = assertOnTruncation;
 //version = assertOnUnhandledUnion;
 
@@ -63,6 +85,8 @@ else
 {
     static assert(0, "Unsupported OS.");
 }
+
+immutable char[] intToCharTable = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f'];
 
 size_t length(const(char*) s)
 {
@@ -186,6 +210,25 @@ ulong formatArg(T)(T t, in FormatSpec spec, char[] buffer)
             bytesWritten = safeCopy(buffer[bytesWritten .. $], T.stringof);
         }
     }
+    else static if(isArray!T)
+    {
+        bytesWritten += safeCopy(buffer[bytesWritten .. $], "[");
+        
+        foreach(i; 0 .. t.length)
+        {
+            bytesWritten += formatArg(t[i], spec, buffer[bytesWritten .. $]);        
+            if (i < t.length - 1)
+            {
+                bytesWritten += safeCopy(buffer[bytesWritten .. $], ", ");
+            }
+        }
+        
+        bytesWritten += safeCopy(buffer[bytesWritten .. $], "]");
+    }
+    else static if (isPointer!T)
+    {
+        bytesWritten = intToString(buffer, cast(size_t)t, 16, spec);
+    }
     else
     {
         pragma(msg, "ERR in print.formatArg(...): Unhandled type " ~ T.stringof);
@@ -247,6 +290,41 @@ void formatArg(T)(T t, in FormatSpec spec, FileHandle file)
     }
     else static if(is(T == union))
     {
+        /*
+        alias toPrintMembers = getSymbolsByUDA!(T, toPrint);
+        enum bool printTaggedUnion = hasUDA!(T, toPrintWhen);
+        static if (toPrintMembers.length < 1 && !printTaggedUnion)
+        {
+            version(assertOnUnhandledUnion)
+            {
+                pragma(msg, "ERR: Unhandled union " ~ T.stringof ~ ". No @toPrint UDA found.");
+                static assert(0);
+            }
+            printFile(file, T.stringof);
+        }
+        else
+        {
+            printFile(file, "(");
+            alias allMembers = __traits(allMembers, T);
+            static foreach(i, memberString; allMembers)
+            {
+                static foreach(toPrintMember; toPrintMembers)
+                {
+                    static if (toPrintMember.stringof == memberString)
+                    {
+                        
+                    }
+                }
+                formatArg(mixin("t." ~ memberString), spec, file);
+                static if (i < allMembers.length - 1)
+                {
+                    printFile(file, ", ");
+                }
+            }
+            printFile(file, ")");
+        }*/
+    
+        
         alias toPrintMembers = getSymbolsByUDA!(T, toPrint);
         static if (toPrintMembers.length > 0)
         {
@@ -270,6 +348,27 @@ void formatArg(T)(T t, in FormatSpec spec, FileHandle file)
             }
             printFile(file, T.stringof);
         }
+    }
+    else static if(isArray!T)
+    {
+        printFile(file, "[");
+        
+        foreach(i; 0 .. t.length)
+        {
+            formatArg(t[i], spec, file);       
+            if (i < t.length - 1)
+            {
+                printFile(file, ", ");
+            }
+        }
+        
+        printFile(file, "]");
+    }
+    else static if (isPointer!T)
+    {
+        char[30] buffer;
+        auto length = intToString(buffer, cast(size_t)t, 16, spec);
+        printFile(file, buffer[0 .. length]);
     }
     else
     {
@@ -326,15 +425,13 @@ if(isSomeString!T || isSomeChar!(source([0])))
 }
 
 size_t intToString(T)(char[] buffer, T t, ubyte base, FormatSpec spec)
-{
-    import std.math;
-    
-    static assert(isIntegral!T);
-    
+if(isIntegral!T)
+{   
     static if (isSigned!T)
     {
-        auto sign = sgn(t);
-        t = t*sign; // NOTE: Strip off the sign to prevent the mod operator from giving us a negative array index.
+        import std.math : abs, sgn;
+        T sign = cast(T)sgn(t);
+        t = abs(sign); // NOTE: Strip off the sign to prevent the mod operator from giving us a negative array index.
     }
     
     char[30] conversion; // NOTE: This should be plenty large enough to hold even the maximum value of a ulong.
@@ -342,7 +439,7 @@ size_t intToString(T)(char[] buffer, T t, ubyte base, FormatSpec spec)
     
     foreach_reverse(place; 0..finish)
     {
-        conversion[place] = cast(char)('0' + (t % base));
+        conversion[place] = intToCharTable[t % base];
         t /= base;
         
         // TODO: Add commas in the conversion string?
@@ -356,6 +453,12 @@ size_t intToString(T)(char[] buffer, T t, ubyte base, FormatSpec spec)
                     place--;
                     conversion[place] = '-';
                 }
+            }
+            
+            if(base == 16 && place >= 2)
+            {
+                conversion[--place] = 'x';
+                conversion[--place] = '0';
             }
         
             finish = place;

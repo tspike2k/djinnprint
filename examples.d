@@ -59,8 +59,25 @@ struct Outer
     float x;
 }
 
+struct TestStruct
+{
+    int a, b;
+    float f;
+}
+
+union Vect2
+{
+    @toPrint struct {float x = 0.0f, y = 0.0f;};
+    struct {float u, v;};
+    float[2] c;
+}
+
+static assert(Vect2.sizeof == float.sizeof*2);
+
 void formatExamples()
 {
+    printOut!"----format(...) Examples----\n";
+
     char[512] buffer;
     
     string fmt = "The numbers are {2} {0} {1}\n";
@@ -94,7 +111,12 @@ void formatExamples()
     test.b = 2;
     test.f = 3.0f;
     
-    printOut(format!"\nThe struct is: {0}{1}\n"(buffer, typeof(test).stringof, test));
+    printOut("\n");
+    
+    printOut(format!"The struct is: {0}{1}\n"(buffer, typeof(test).stringof, test));
+    
+    int[5] arrayTest = [0, 1, 2, 3, 4];
+    printOut(format!"arrayTest: {0}\n"(buffer, arrayTest));
     
     TestEnum te = TestEnum.BETA;
     printOut(format!"The enum is {0}\n"(buffer, te));
@@ -104,10 +126,14 @@ void formatExamples()
     
     Outer outer = Outer(Inner(TestEnum.GAMMA, 2, 4), 3.1415f);
     printOut(format!"outer == {0}\n"(buffer, outer));
+    
+    printOut(format!"The address of outer is {0}\n"(buffer, &outer));
 }
 
 void printOutExamples()
 {
+    printOut!"\n\n----printOut(...) Examples----\n";
+
     string fmt = "The numbers are {2} {0} {1}\n";
     int t = 42;
     printOut!fmt(1, -2, t);
@@ -144,27 +170,78 @@ void printOutExamples()
     TestEnum te = TestEnum.BETA;
     printOut!"The enum is {0}\n"(te);
     
+    int[5] arrayTest = [0, 1, 2, 3, 4];
+    printOut!"arrayTest: {0}\n"(arrayTest);
+    
     Vect2 vec = Vect2(2.0f, 3.0f);
     printOut!"Vect2 vec: {0}\n"(vec);
     
     Outer outer = Outer(Inner(TestEnum.GAMMA, 2, 4), 3.1415f);
     printOut!"outer == {0}\n"(outer);
+    
+    printOut!"The address of outer is {0}\n"(&outer);
 }
 
-struct TestStruct
+enum EntityType
 {
-    int a, b;
-    float f;
+    NONE,
+    PLAYER,
+    DOOR,
 }
 
-union Vect2
+struct Entity_Common
 {
-    @toPrint struct {float x = 0.0f, y = 0.0f;};
-    struct {float u, v;};
-    float[2] c;
+    EntityType type;
+    Vect2 pos;
+    Vect2 vel;
 }
 
-static assert(Vect2.sizeof == float.sizeof*2);
+struct Entity_Player
+{
+    Entity_Common common;
+    alias common this;
+    string name;
+}
+
+struct Entity_Door
+{
+    Entity_Common common;
+    alias common this;
+    
+    bool opened;
+}
+
+@toPrintWhen("common.type", [
+    "EntityType.PLAYER", "player",
+    "EntityType.DOOR", "door"
+])
+union Entity
+{
+    Entity_Common common;
+    Entity_Player player;
+    Entity_Door   door;    
+}
+
+void taggedUnionExample()
+{
+    printOut!"\n\n----Tagged union examples----\n";
+    
+    Entity player;
+    auto p = &player.player;
+    p.type = EntityType.PLAYER;
+    p.name = "Rolf";
+    
+    printOut!"{0}"(player);
+}
+
+void miscExamples()
+{
+    printOut!"\n\n----Misc examples----\n";
+    char[512] buffer;
+    char[28] fmt = cast(char[28])"Static array fmt test #{0}.\n";
+    printOut(format!fmt(buffer, 1));
+    printOut!fmt(2);
+}
 
 extern(C) int main()
 {    
@@ -173,16 +250,13 @@ extern(C) int main()
         djinnprint.init();
     }
     
-    printOut!"----format(...) Examples----\n";
     formatExamples();
     
-    printOut!"\n\n----printOut(...) Examples----\n";
     printOutExamples();
     
-    char[512] buffer;
-    char[28] fmt = cast(char[28])"Static array fmt test #{0}.\n";
-    printOut(format!fmt(buffer, 1));
-    printOut!fmt(2);
+    taggedUnionExample();
+    
+    miscExamples();
  
     return 0;
 }
