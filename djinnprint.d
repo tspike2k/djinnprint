@@ -10,7 +10,7 @@ module djinnprint;
 // TODO: Bool printing
 
 // TODO: Allow user to print tagged unions. Have a UDA to tell what the tag variable is on the union, 
-// and a UDA to say which state should be prented for which tag:
+// and a UDA to say which state should be printed for which tag:
 //
 // @unionTag("common.entityType") union {
 //     @toPrintWhen("EntityType.COMMON") EntityCommon common;
@@ -36,7 +36,6 @@ module djinnprint;
 private @nogc nothrow:
 
 public enum toPrint;
-public enum useModuleConstructors = true;
 
 public struct toPrintWhen
 {
@@ -51,29 +50,27 @@ import std.traits;
 
 version(Posix)
 {
-    import core.sys.posix.unistd : write;
-    
     alias FileHandle = int;
     enum FileHandle stdOut = 1;
     enum FileHandle stdErr = 2;
     
-    void init(){};
+    public void init(){};
 }
 else version(Windows)
 {
     // TODO: Test on Windows
-    import core.sys.windows;
+    import core.sys.windows : FileHandle, GetStdHandle;
     alias FileHandle = HANDLE;
     __gshared FileHandle stdOut;
     __gshared FileHandle stdErr;
     
-    void init()
+    public void init()
     {
         HANDLE stdOut = GetStdHandle(STD_OUTPUT_HANDLE);
         HANDLE stdErr = GetStdHandle(STD_ERROR_HANDLE);
     }
     
-    static if (useModuleConstructors)
+    version(D_ModuleInfo)
     {
         static this()
         {
@@ -151,7 +148,7 @@ ulong formatArg(T)(T t, in FormatSpec spec, char[] buffer)
             assert(bytesWritten != size_t.max);
         }
     }
-    else static if(is(T == char[]) || is(T == string))
+    else static if((isArray!T && is(typeof(t[0]) == char)) || is(T == string))
     {
         if (buffer.length < t.length)
         {
@@ -270,7 +267,7 @@ void formatArg(T)(T t, in FormatSpec spec, FileHandle file)
         auto msg = t[0 .. length(t)];
         printFile(file, msg);
     }
-    else static if(is(T == char[]) || is(T == string))
+    else static if((isArray!T && is(typeof(t[0]) == char)) || is(T == string))
     {
         printFile(file, t);
     }
@@ -550,8 +547,8 @@ enum printCommon = `
     mixin(outputPolicy);
 `;
 
-char[] format(alias fmt, Args...)(char[] buffer, Args args)
-if(isSomeString!(typeof(fmt)) || isSomeChar!(typeof(fmt[0])))
+char[] format(T, Args...)(T fmt, char[] buffer, Args args)
+if(isArray!(typeof(fmt)) && isSomeChar!(typeof(fmt[0])))
 {  
     size_t bufferWritten = 0;
     enum outputPolicy = `bufferWritten += safeCopy(buffer[bufferWritten..buffer.length], fmt[fmtCopyToBufferIndex .. fmtCursor]);`;
@@ -559,13 +556,13 @@ if(isSomeString!(typeof(fmt)) || isSomeChar!(typeof(fmt[0])))
     
     mixin(printCommon);
     
-    //assert(bufferWritten < buffer.length);
-    buffer[buffer.length-1] = '\0';
+    size_t zeroIndex = bufferWritten < buffer.length ? bufferWritten : buffer.length - 1;
+    buffer[zeroIndex] = '\0';
     return buffer[0..bufferWritten];
 }
 
-void printOut(alias fmt, Args...)(Args args)
-if(isSomeString!(typeof(fmt)) || isSomeChar!(typeof(fmt[0])))
+void printOut(T, Args...)(T fmt, Args args)
+if(isArray!(typeof(fmt)) && isSomeChar!(typeof(fmt[0])))
 {
     FileHandle file = stdOut;
     
@@ -576,14 +573,14 @@ if(isSomeString!(typeof(fmt)) || isSomeChar!(typeof(fmt[0])))
 }
 
 void printOut(T)(T msg)
-if(isSomeString!T || isSomeChar!(typeof(msg[0])))
+if(isArray!(typeof(msg)) && isSomeChar!(typeof(msg[0])))
 {
     FileHandle file = stdOut;
     printFile(file, msg);
 }
 
-void printErr(alias fmt, Args...)(Args args)
-if(isSomeString!(typeof(fmt)) || isSomeChar!(typeof(fmt[0])))
+void printErr(T, Args...)(T fmt, Args args)
+if(isArray!(typeof(fmt)) && isSomeChar!(typeof(fmt[0])))
 {
     FileHandle file = stdErr;
     
@@ -594,17 +591,27 @@ if(isSomeString!(typeof(fmt)) || isSomeChar!(typeof(fmt[0])))
 }
 
 void printErr(T)(T msg)
-if(isSomeString!T || isSomeChar!(typeof(msg[0])))
+if(isArray!(typeof(msg)) && isSomeChar!(typeof(msg[0])))
 {
     FileHandle file = stdErr;
     printFile(file, msg);
 }
 
+void printFile(T, Args...)(FileHandle file, T fmt, Args args)
+if(isArray!(typeof(fmt)) && isSomeChar!(typeof(fmt[0])))
+{
+    enum outputPolicy = `printFile(file, fmt[fmtCopyToBufferIndex .. fmtCursor]);`;
+    enum formatPolicy = `formatArg(args[i], formatSpec, file);`;
+
+    mixin(printCommon);
+}
+
 void printFile(T)(FileHandle file, T msg)
-if(isSomeString!T || isSomeChar!(typeof(msg[0])))
+if(isArray!(typeof(msg)) && isSomeChar!(typeof(msg[0])))
 {
     version(Posix)
     {
+        import core.sys.posix.unistd : write;
         if (file != -1)
         {
             write(file, msg.ptr, msg.length);        
@@ -612,6 +619,7 @@ if(isSomeString!T || isSomeChar!(typeof(msg[0])))
     }
     else version(Windows)
     {
+        import core.sys.windows : WriteFile, INVALID_HANDLE_VALUE;
         if(file != INVALID_HANDLE_VALUE)
         {
             WriteFile(file, msg.ptr, msg.length, null, null);        

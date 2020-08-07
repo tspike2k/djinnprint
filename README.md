@@ -7,10 +7,10 @@ Type-safe, @nogc functions used to format data as text. Also -betterC compatible
 ```D    
 // Format to a buffer:
 char[512] buffer;
-printOut(format!"The numbers are {2}, {0}, and {1}.\n"(buffer, 1, 2, 3));
+printOut(format("The numbers are {2}, {0}, and {1}.\n", buffer, 1, 2, 3));
 
 // Format directly to stdout:
-printOut!"The numbers are {1}, {2}, and {0}.\n"(1, 2, 3);
+printOut("The numbers are {1}, {2}, and {0}.\n", 1, 2, 3);
 ```
 
 ### Output
@@ -30,25 +30,25 @@ For a demonstration of this code, see the examples.d file.
 
 ### Format Specifiers
 
-The formatting and printing functions provided by djinnprint each take a format string as a template argument. This string will be copied to the output as-is, except for any format specifiers. A format specifier is a portion of the format string that begins with a single open curly brace ("{") and ends with a closed curly brace ("}"). The text between these characters determines which argument will be formatted and in what way. The format specifier must not contain whitespace and and must begin with a number indicating the index of the argument whose value is to be formatted (indices start at zero). 
+The formatting and printing functions provided by djinnprint each take a format string as the first argument. This string will be copied to the output as-is, except for any format specifiers. A format specifier is a portion of the format string that begins with a single open curly brace ("{") and ends with a closed curly brace ("}"). The text between these characters determines which argument will be formatted and in what way. The format specifier must not contain whitespace and and must begin with a number indicating the index of the argument whose value is to be formatted (indices start at zero). 
 
-If two open curly braces appear next to one another djinnprint will not interpret either characters as the start of a format specifier; instead only one open curly brace will be copied to the output and the rest of the format string will be copied as usual.
+If two open curly braces appear next to one another djinnprint will not interpret the characters as the start of a format specifier; instead it will only output one open curly brace and will continue to copy the rest of the format string as usual, without interpreting either character as the start of a format specifier. In this way, double open curly braces ("{{") act as an escape character.
 
 Note that formatting options are planned but not currently implemented.
 
 ### format()
 
-The format function is used to format arguments into a fixed size buffer, similar to the snprintf function in C. The format string is passed as a template argument. The function then takes the buffer followed by variadic arguments. The format string is copied into the buffer with each format specifier replaced by the textual representation of a given argument's value. To ensure compatibility with C the end of the resulting string is null terminated. Even if the resulting string is too long to fit in the buffer and is truncated, the last element of the buffer is the null terminator. A slice is returned containing how much was written into the buffer.
+The format function is used to format arguments into a fixed size buffer, similar to the snprintf function in C. The format string is passed as the first argument. The function then takes the buffer followed by variadic arguments. The format string is copied into the buffer with each format specifier replaced by the textual representation of a given argument's value. To ensure compatibility with C the end of the resulting string is null terminated. Even if the resulting string is too long to fit in the buffer and is truncated, the last element of the buffer will be set to the null terminator. A slice containing how much text was written into the buffer is returned.
 
 ### printOut(), printErr()
 
-Much like the format() function, these functions take a format string as a template argument. The format string is copied to an output stream with each format specifier replaced by the textual representation of a given argument's value. The result of printOut is sent to the standard output stream while the result of printErr is sent to the standard error stream.
+Much like the format() function, these functions take a format string as the first argument. The format string is copied to an output stream with each format specifier replaced by the textual representation of a given argument's value. The result of printOut is sent to the standard output stream while the result of printErr is sent to the standard error stream.
 
-For convenience, alternate versions of printOut() and printErr() are provided that simply take a string and send it to the standard output or standard error stream, respectively. This is especially useful for quickly logging the result of the format() function.
+For convenience, alternate versions of printOut() and printErr() are provided that simply take a string and send it to the standard output or standard error streams, respectively. This is especially useful for quickly logging the result of the format() function.
 
 ### Formatting unions (experimental)
 
-Unions are an odd case. As union members share the same memory layout, formatting each member is redundant. Even worse, under some conditions certain members will be in an invalid state. This could be mitigated by asking the user to supply a toString() method with every union they wish to format. But the union itself shouldn't need to know HOW to format their arguments. After all, that's the responsibility of the formatting functions. Rather the responsibility of the union should be to tell the library which members should be formatted. This is done by marking union members that should always be formatted with the @toPrint user-defined attribute.
+Unions are an odd case. As union members share the same memory layout, formatting each member is redundant. Even worse, under some conditions certain members will be in an invalid state. This could be mitigated by asking the user to supply a toString() method with every union they wish to format. But the union itself shouldn't need to know HOW to format their arguments. After all, that's the responsibility of the formatting functions. Rather the responsibility of the union should be to tell the library which members should be formatted. This is currently done by marking union members that should always be formatted with the @toPrint user-defined attribute.
 
 UDAs for formatting tagged unions is planned.
 
@@ -63,15 +63,15 @@ This project is currently a very early proof-of-concept and is in no way product
 ### Todo
 
 * Add formatting options for variables.
-* Support for additional data types (pointers, structs, etc.).
+* Support for additional data types (doubles, etc.)
 * Testing on Windows.
-* Thorough testing.
+* Thorough testing in general.
 * Float to string conversion that doesn't rely on snprintf.
-* Improve union formatting by allowing arbitrary logic in the toPrint enum that will determine the list of members to format.
+* Formatting for tagged unions.
 
 ## Installation
 
-Simply copy the file djinnprint.d to the source tree of your project and import the module as you would any other D source code. It's that simple.
+Copy the file djinnprint.d to the source tree of your project and import the module as you would any other D source code. It's that simple.
 
 ## License
 

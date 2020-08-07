@@ -76,110 +76,105 @@ static assert(Vect2.sizeof == float.sizeof*2);
 
 void formatExamples()
 {
-    printOut!"----format(...) Examples----\n";
-
+    printOut("----format(...) Examples----\n");
+    
     char[512] buffer;
     
-    string fmt = "The numbers are {2} {0} {1}\n";
+    string formatString = "Arguments can printed out of order: {2} {0} {1}\n";
     int t = 42;
-    auto result = format!fmt(buffer, 1, -2, t);
+    auto result = format(formatString, buffer, 1, -2, t);
     printOut(result);
 
     char[] msg = cast(char[])"Hello, world!";
     float f = -32.0f;
-    printOut(format!fmt(buffer, 2, msg, f, 92));
+    printOut(format(formatString, buffer, 2, msg, f));
     
-    foreach(i; 1 .. 10)
-    {
-        printOut(format!"Test {0}: {1}.\n"(buffer, i, i / 2));
-    }
+    char[24] charArray = "This is a char array.";
+    printOut(format("char array: `{0}`\n", buffer, charArray));
     
-    printOut(format!"Test string `{0}`\n"(buffer, msg.ptr));
+    printOut(format("Can even print cstrings: `{0}`\n", buffer, msg.ptr));
     
     char nullMessage = '\0';
     
-    char* cString = cast(char*)"Test string";
-    
-    printOut(format!"Null string `{0}`\n"(buffer, &nullMessage));
-    printOut(format!"This is an {{escape character test}.\n"(buffer, 1066));
-    
-    printOut(format!"\nLong  string: `{0}`\n"(buffer, longString));
-    printOut(format!"\n\nLong cstring: `{0}`\n"(buffer, longString.ptr));
+    printOut(format("Null string: `{0}`\n", buffer, &nullMessage));
+    printOut(format("This is an {{escape character test}.\n", buffer));
+
+    printOut("\n");
+    printOut(format("Long string: `{0}`\n", buffer, longString));
+    printOut("\n\n");
+    printOut(format("Long cstring: `{0}`\n", buffer, longString.ptr));
+    printOut("\n\n");
     
     TestStruct test;
     test.a = 1;
     test.b = 2;
     test.f = 3.0f;
     
-    printOut("\n");
-    
-    printOut(format!"The struct is: {0}{1}\n"(buffer, typeof(test).stringof, test));
+    printOut(format("The struct is: {0}{1}\n", buffer, typeof(test).stringof, test));
     
     int[5] arrayTest = [0, 1, 2, 3, 4];
-    printOut(format!"arrayTest: {0}\n"(buffer, arrayTest));
+    printOut(format("arrayTest: {0}\n", buffer, arrayTest));
     
     TestEnum te = TestEnum.BETA;
-    printOut(format!"The enum is {0}\n"(buffer, te));
+    printOut(format("The enum is {0}\n", buffer, te));
     
     Vect2 vec = Vect2(2.0f, 3.0f);
-    printOut(format!"Vect2 vec: {0}\n"(buffer, vec));
+    printOut(format("Vect2 vec: {0}\n", buffer, vec));
     
     Outer outer = Outer(Inner(TestEnum.GAMMA, 2, 4), 3.1415f);
-    printOut(format!"outer == {0}\n"(buffer, outer));
+    printOut(format("outer == {0}\n", buffer, outer));
     
-    printOut(format!"The address of outer is {0}\n"(buffer, &outer));
+    printOut(format("The address of outer is {0}\n", buffer, &outer));
 }
 
 void printOutExamples()
 {
-    printOut!"\n\n----printOut(...) Examples----\n";
+    printOut("\n\n----printOut(...) Examples----\n");
 
-    string fmt = "The numbers are {2} {0} {1}\n";
+    string formatString = "Arguments can printed out of order: {2} {0} {1}\n";
     int t = 42;
-    printOut!fmt(1, -2, t);
+    printOut(formatString, 1, -2, t);
 
     char[] msg = cast(char[])"Hello, world!";
     float f = -32.0f;
-    printOut!fmt(2, msg, f, 92);
+    printOut(formatString, 2, msg, f);
     
-    foreach(i; 1 .. 10)
-    {
-        printOut!"Test {0}: {1}.\n"(i, i / 2);
-    }
+    char[24] charArray = "This is a char array.";
+    printOut("char array: `{0}`\n", charArray);
     
-    printOut!"Test string `{0}`\n"(msg.ptr);
+    printOut("Can even print cstrings: `{0}`\n", msg.ptr);
     
     char nullMessage = '\0';
     
-    char* cString = cast(char*)"Test string";
-    
-    printOut!"Null string `{0}`\n"(&nullMessage);
-    printOut!"This is an {{escape character test}.\n"(1066);
-    printOut!"Another test \"{0}\"\n"(cString);
-    
-    printOut!"\nLong  string: `{0}`\n"(longString);
-    printOut!"\nLong cstring: `{0}`\n"(longString.ptr);
+    printOut("Null string: `{0}`\n", &nullMessage);
+    printOut("This is an {{escape character test}.\n");
+
+    printOut("\n");
+    printOut("Long string: `{0}`\n", longString);
+    printOut("\n\n");
+    printOut("Long cstring: `{0}`\n", longString.ptr);
+    printOut("\n\n");
     
     TestStruct test;
     test.a = 1;
     test.b = 2;
     test.f = 3.0f;
     
-    printOut!"The struct is: {0}{1}\n"(typeof(test).stringof, test);
-    
-    TestEnum te = TestEnum.BETA;
-    printOut!"The enum is {0}\n"(te);
+    printOut("The struct is: {0}{1}\n", typeof(test).stringof, test);
     
     int[5] arrayTest = [0, 1, 2, 3, 4];
-    printOut!"arrayTest: {0}\n"(arrayTest);
+    printOut("arrayTest: {0}\n", arrayTest);
+    
+    TestEnum te = TestEnum.BETA;
+    printOut("The enum is {0}\n", te);
     
     Vect2 vec = Vect2(2.0f, 3.0f);
-    printOut!"Vect2 vec: {0}\n"(vec);
+    printOut("Vect2 vec: {0}\n", vec);
     
     Outer outer = Outer(Inner(TestEnum.GAMMA, 2, 4), 3.1415f);
-    printOut!"outer == {0}\n"(outer);
+    printOut("outer == {0}\n", outer);
     
-    printOut!"The address of outer is {0}\n"(&outer);
+    printOut("The address of outer is {0}\n", &outer);
 }
 
 enum EntityType
@@ -224,29 +219,23 @@ union Entity
 
 void taggedUnionExample()
 {
-    printOut!"\n\n----Tagged union examples----\n";
+    printOut("\n\n----Tagged union examples (WIP)----\n");
     
     Entity player;
     auto p = &player.player;
     p.type = EntityType.PLAYER;
     p.name = "Rolf";
     
-    printOut!"{0}"(player);
-}
-
-void miscExamples()
-{
-    printOut!"\n\n----Misc examples----\n";
-    char[512] buffer;
-    char[28] fmt = cast(char[28])"Static array fmt test #{0}.\n";
-    printOut(format!fmt(buffer, 1));
-    printOut!fmt(2);
+    printOut("{0}\n", player);
 }
 
 extern(C) int main()
 {    
-    static if (!djinnprint.useModuleConstructors)
+    version(D_ModuleInfo){}
+    else
     {
+        // NOTE: You only need to call the .init() function manually if module constructors are disabled,
+        // such as in the case when -betterC is used.
         djinnprint.init();
     }
     
@@ -255,8 +244,6 @@ extern(C) int main()
     printOutExamples();
     
     taggedUnionExample();
-    
-    miscExamples();
  
     return 0;
 }
