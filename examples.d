@@ -61,18 +61,16 @@ struct Outer
 
 struct TestStruct
 {
-    int a, b;
+    int[2] ints;
     float f;
 }
 
 union Vect2
 {
-    @toPrint struct {float x = 0.0f, y = 0.0f;};
+    @ToPrint struct {float x = 0.0f, y = 0.0f;};
     struct {float u, v;};
     float[2] c;
 }
-
-static assert(Vect2.sizeof == float.sizeof*2);
 
 void formatExamples()
 {
@@ -80,7 +78,7 @@ void formatExamples()
     
     char[512] buffer;
     
-    string formatString = "Arguments can printed out of order: {2} {0} {1}\n";
+    string formatString = "Arguments can be printed out of order: {2} {0} {1}\n";
     int t = 42;
     auto result = format(formatString, buffer, 1, -2, t);
     printOut(result);
@@ -105,11 +103,7 @@ void formatExamples()
     printOut(format("Long cstring: `{0}`\n", buffer, longString.ptr));
     printOut("\n\n");
     
-    TestStruct test;
-    test.a = 1;
-    test.b = 2;
-    test.f = 3.0f;
-    
+    TestStruct test = TestStruct([1, 2], 3.0f);
     printOut(format("The struct is: {0}{1}\n", buffer, typeof(test).stringof, test));
     
     int[5] arrayTest = [0, 1, 2, 3, 4];
@@ -131,7 +125,7 @@ void printOutExamples()
 {
     printOut("\n\n----printOut(...) Examples----\n");
 
-    string formatString = "Arguments can printed out of order: {2} {0} {1}\n";
+    string formatString = "Arguments can be printed out of order: {2} {0} {1}\n";
     int t = 42;
     printOut(formatString, 1, -2, t);
 
@@ -155,11 +149,7 @@ void printOutExamples()
     printOut("Long cstring: `{0}`\n", longString.ptr);
     printOut("\n\n");
     
-    TestStruct test;
-    test.a = 1;
-    test.b = 2;
-    test.f = 3.0f;
-    
+    TestStruct test = TestStruct([1, 2], 3.0f);
     printOut("The struct is: {0}{1}\n", typeof(test).stringof, test);
     
     int[5] arrayTest = [0, 1, 2, 3, 4];
@@ -206,27 +196,38 @@ struct Entity_Door
     bool opened;
 }
 
-@toPrintWhen("common.type", [
-    "EntityType.PLAYER", "player",
-    "EntityType.DOOR", "door"
-])
+@ToPrintWhen!EntityType("common.type",
+    [EntityType.PLAYER, EntityType.DOOR], 
+    ["player", "door"]
+)
 union Entity
 {
     Entity_Common common;
     Entity_Player player;
-    Entity_Door   door;    
+    Entity_Door   door;
 }
 
 void taggedUnionExample()
 {
     printOut("\n\n----Tagged union examples (WIP)----\n");
     
+    char[512] buffer;
+    
     Entity player;
     auto p = &player.player;
+    p.pos = Vect2(2, 4);
+    p.vel = Vect2(12, 16);
     p.type = EntityType.PLAYER;
     p.name = "Rolf";
     
+    Entity door;
+    auto d = &door.door;
+    d.pos = Vect2(3, 9);
+    d.type = EntityType.DOOR;
+    d.opened = true;
+    
     printOut("{0}\n", player);
+    printOut(format("{0}\n", buffer, door));
 }
 
 extern(C) int main()

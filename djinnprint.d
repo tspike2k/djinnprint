@@ -2,51 +2,76 @@
 // Copyright: Copyright (c) 2020
 // License:   Boost Software License 1.0 (https://www.boost.org/LICENSE_1_0.txt)
 
-module djinnprint;
+// TODO:
 
-// TODO: Do not use .stringof for code generation. See this page for details:
+// - Do not use .stringof for code generation; use __traits(identifier, <var>) instead. See this page for details:
 // https://dlang.org/spec/property.html#stringof
 
-// TODO: Bool printing
+// - Print doubles
 
-// TODO: Allow user to print tagged unions. Have a UDA to tell what the tag variable is on the union, 
-// and a UDA to say which state should be printed for which tag:
-//
-// @unionTag("common.entityType") union {
-//     @toPrintWhen("EntityType.COMMON") EntityCommon common;
-//     @toPrintWhen("EntityType.DOOR")   EntityDoor   door;
-//     @toPrintWhen("EntityType.ANIMAL") EntityDoor   animal;
-// }
-//
-// Or, perhaps more cleanly, a UDA that states the tag to switch on AND the variables to print based on which value:
-// 
-// @toPrintWhen("common.entityType",
-// [
-//     UnionCase(EntityType.COMMON, "common"),
-//     UnionCase(EntityType.DOOR,   "door"),
-//     UnionCase(EntityType.ANIMAL, "animal"),
-// ]) union {
-//     EntityCommon common;
-//     EntityDoor   door;
-//     EntityDoor   animal;
-// }
-//
-// THAT looks much better.
+// - Figure out how to make ToPrintWhen -betterC compatible
 
-private @nogc nothrow:
+// - Testing on Windows
 
-public enum toPrint;
+// - Custom float/double to string conversion that doesn't rely on snprintf
 
-public struct toPrintWhen
-{
-    string unionTag;
-    string[] casesAndMembers;
-}
+// - Add formatting options for variable (commas for integers, hex output, etc.)
+//   Additionally, there should be an option to print the name of each struct type before the value of its members. This could be useful in code generation.
+//   For instance, printing `Vect2(1.0000f, 1.0000f)` would be useful for this case rather than `(1.0000, 1.000)`, the latter of which is the default behavior.
 
-//version = assertOnTruncation;
-//version = assertOnUnhandledUnion;
+module djinnprint;
+
+private:
 
 import std.traits;
+
+// NOTE: Uncomment the lines below to alter the behavior of the library.
+//version = assertOnTruncation; // Trigger an assertion when formatting to a buffer results in a string larger than the buffer size
+//version = assertOnUnhandledUnion; // Assert when a union without ToPrint or ToPrintWhen UDAs is found while formatting.
+
+public enum ToPrint;
+
+public struct ToPrintWhen(T)
+{
+    string unionTag;
+    T[]      cases;
+    string[] members;
+}
+
+string genUDASwitchStatement(alias uda, string formatBegin, string formatEnd)()
+{
+    string result;
+    static if(!disableToPrintWhen)
+    {   
+        static if (is(typeof(uda.cases[0]) == enum))
+        {
+            alias tagType = OriginalType!(typeof(uda.cases[0]));
+        }
+        else
+        {
+            alias tagType = typeof(uda.cases[0]);
+        }
+        
+        char[30] buffer; 
+        FormatSpec spec;
+        
+        result ~= "switch (cast(" ~ tagType.stringof ~ ")t." ~ uda.unionTag ~ ")\n{\n";
+        static foreach(i; 0 .. uda.cases.length)
+        {
+            {
+                size_t len = intToString(buffer, cast(tagType)uda.cases[i], 10, spec);
+                result ~= "    case " ~ buffer[0 .. len] ~ ": " ~ formatBegin ~ "t." ~ uda.members[i] ~ formatEnd ~ "; break;\n";                     
+            }
+        }
+        
+        result ~= "    default: assert(0, \"Unable to print union: union tag type unhandled\"); break;";
+        result ~= "\n}";
+    }
+    
+    return result;
+}
+
+@nogc nothrow:
 
 version(Posix)
 {
@@ -83,6 +108,15 @@ else
     static assert(0, "Unsupported OS.");
 }
 
+version(D_ModuleInfo)
+{
+    enum disableToPrintWhen = false;
+}
+else
+{
+    enum disableToPrintWhen = true;
+}
+
 immutable char[] intToCharTable = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f'];
 
 size_t length(const(char*) s)
@@ -109,6 +143,17 @@ ulong formatArg(T)(T t, in FormatSpec spec, char[] buffer)
             {
                 bytesWritten = safeCopy(buffer, __traits(identifier, EnumMembers!T[i]));
             }
+        }
+    }
+    else static if(is(T == bool))
+    {
+        if(t)
+        {
+            bytesWritten = safeCopy(buffer, "true");
+        }
+        else
+        {
+            bytesWritten = safeCopy(buffer, "false");
         }
     }
     else static if (isIntegral!T)
@@ -181,7 +226,7 @@ ulong formatArg(T)(T t, in FormatSpec spec, char[] buffer)
     }
     else static if(is(T == union))
     {
-        alias toPrintMembers = getSymbolsByUDA!(T, toPrint);
+        alias toPrintMembers = getSymbolsByUDA!(T, ToPrint);
         static if (toPrintMembers.length > 0)
         {
             bytesWritten += safeCopy(buffer[bytesWritten .. $], "(");
@@ -195,6 +240,13 @@ ulong formatArg(T)(T t, in FormatSpec spec, char[] buffer)
             }
             bytesWritten += safeCopy(buffer[bytesWritten .. $], ")");
         }
+        else if (hasUDA!(T, ToPrintWhen) && !disableToPrintWhen)
+        {
+            enum uda = getUDAs!(T, ToPrintWhen)[0];
+            static assert(uda.cases.length == uda.members.length);
+            
+            mixin(genUDASwitchStatement!(uda, "bytesWritten += formatArg(", ", spec, buffer[bytesWritten .. $])"));
+        }
         else
         {
             version(assertOnUnhandledUnion)
@@ -203,8 +255,8 @@ ulong formatArg(T)(T t, in FormatSpec spec, char[] buffer)
                 static assert(0);
             }
         
-            // TODO: Allow user to enable assertions of union is not print compatible
-            bytesWritten = safeCopy(buffer[bytesWritten .. $], T.stringof);
+            bytesWritten += safeCopy(buffer[bytesWritten .. $], "union ");
+            bytesWritten += safeCopy(buffer[bytesWritten .. $], T.stringof);
         }
     }
     else static if(isArray!T)
@@ -247,6 +299,17 @@ void formatArg(T)(T t, in FormatSpec spec, FileHandle file)
             }
         }
     }
+    else static if(is(T == bool))
+    {
+        if(t)
+        {
+            printFile(file, "true");
+        }
+        else
+        {
+            printFile(file, "false");
+        }
+    }
     else static if (isIntegral!T)
     {
         char[30] buffer;
@@ -287,42 +350,7 @@ void formatArg(T)(T t, in FormatSpec spec, FileHandle file)
     }
     else static if(is(T == union))
     {
-        /*
-        alias toPrintMembers = getSymbolsByUDA!(T, toPrint);
-        enum bool printTaggedUnion = hasUDA!(T, toPrintWhen);
-        static if (toPrintMembers.length < 1 && !printTaggedUnion)
-        {
-            version(assertOnUnhandledUnion)
-            {
-                pragma(msg, "ERR: Unhandled union " ~ T.stringof ~ ". No @toPrint UDA found.");
-                static assert(0);
-            }
-            printFile(file, T.stringof);
-        }
-        else
-        {
-            printFile(file, "(");
-            alias allMembers = __traits(allMembers, T);
-            static foreach(i, memberString; allMembers)
-            {
-                static foreach(toPrintMember; toPrintMembers)
-                {
-                    static if (toPrintMember.stringof == memberString)
-                    {
-                        
-                    }
-                }
-                formatArg(mixin("t." ~ memberString), spec, file);
-                static if (i < allMembers.length - 1)
-                {
-                    printFile(file, ", ");
-                }
-            }
-            printFile(file, ")");
-        }*/
-    
-        
-        alias toPrintMembers = getSymbolsByUDA!(T, toPrint);
+        alias toPrintMembers = getSymbolsByUDA!(T, ToPrint);
         static if (toPrintMembers.length > 0)
         {
             printFile(file, "(");
@@ -336,6 +364,13 @@ void formatArg(T)(T t, in FormatSpec spec, FileHandle file)
             }
             printFile(file, ")");
         }
+        else if (hasUDA!(T, ToPrintWhen) && !disableToPrintWhen)
+        {
+            enum uda = getUDAs!(T, ToPrintWhen)[0];
+            static assert(uda.cases.length == uda.members.length);
+            
+            mixin(genUDASwitchStatement!(uda, "formatArg(", ", spec, file)"));
+        }
         else
         {
             version(assertOnUnhandledUnion)
@@ -343,6 +378,7 @@ void formatArg(T)(T t, in FormatSpec spec, FileHandle file)
                 pragma(msg, "ERR: Unhandled union " ~ T.stringof ~ ". No @toPrint UDA found.");
                 static assert(0);
             }
+            printFile(file, "union ");
             printFile(file, T.stringof);
         }
     }
