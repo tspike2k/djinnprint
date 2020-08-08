@@ -74,7 +74,7 @@ As of right now, the @ToPrintWhen UDA does not work as intended under -betterC. 
 
 ### Initializing djinnprint
 
-Under some platforms (such as Windows) djinnprint will need to be initialized in order to set up pointers to the standard output/error streams. This is done automatically if module constructors are enabled. If module constructors are disabled (in the case of compiling without the D-runtime or using the -betterC compiler switch in DMD) djinnprint.init should be called before calling any of the printing functions provided by djinnprint. 
+Under some platforms (such as Windows) djinnprint will need to be initialized in order to set up pointers to the standard output/error streams. This is done automatically if module constructors are enabled. If module constructors are disabled (in the case of compiling without the D runtime or using the -betterC compiler switch in DMD) djinnprint.init should be called before calling any of the printing functions provided by djinnprint. 
 
 ## Status
 
@@ -82,12 +82,12 @@ This project is currently a very early proof-of-concept and is in no way product
 
 ### Todo
 
-* Do not use .stringof for code generation; use __traits(identifier, <var>) instead. See this page for details: https://dlang.org/spec/property.html#stringof
+* Do not use .stringof for code generation; use __traits(identifier, var) instead. See this page for details: https://dlang.org/spec/property.html#stringof
 * Print doubles.
 * Figure out how to make @ToPrintWhen -betterC compatible.
 * Testing on Windows.
 * Custom float/double to string conversion that doesn't rely on snprintf.
-* Add formatting options for variable (commas for integers, hex output, etc.). Additionally, there should be an option to print the name of each struct type before the value of its members. This could be useful in code generation. For instance, printing `Vect2(1.0000f, 1.0000f)` would be useful for this case rather than `(1.0000, 1.000)`, the latter of which is the default behavior.
+* Add formatting options for variables (commas for integers, hex output, etc.). Additionally, there should be an option to print the name of each struct type before the value of its members. This could be useful in code generation. For instance, printing `Vect2(1.0000f, 1.0000f)` would be useful for this case rather than `(1.0000, 1.000)`, the latter of which is the default behavior.
 
 ## Installation
 
