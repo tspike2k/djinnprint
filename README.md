@@ -64,13 +64,11 @@ For convenience, alternate versions of printOut() and printErr() are provided th
 
 ### Formatting unions (experimental)
 
-Unions are an odd case. As union members share the same memory layout, formatting each member is redundant. Even worse, under some conditions certain members will be in an invalid state. This could be mitigated by asking the user to supply a toString() method with every union they wish to format. But the union itself shouldn't need to know HOW to format their arguments. After all, that's the responsibility of the formatting functions. Rather the responsibility of the union should be to tell the library which members should be formatted.
+Unions are an odd case. As union members share the same memory layout, formatting each member is redundant. Even worse, under some conditions certain members will be in an invalid state. This could be mitigated by asking the user to supply a toString() method with every union they wish to format. But the union itself shouldn't need to know HOW to format its members. After all, that's the responsibility of this library. Rather the responsibility of the union should be to tell the library which members should be formatted.
 
 In the simplest case, you may have one or several union members you always wish to output when formatting. If this is the case you can tag these members with the @ToPrint UDA. This way only members marked with @ToPrint will be formatted. 
 
-In the case of tagged/discriminated unions, it makes sense to format specific union members when the union is tagged as being a certain type. This can be done by using the @ToPrintWhen UDA. This is a little cumbersome to use. See the examples.d file for an example of how to apply this UDA to a tagged/discriminated union.
-
-As of right now, the @ToPrintWhen UDA does not work as intended under -betterC. Code that uses it will still compile, but it will only print the name of the union type. If possible, the plan is to fix this in the future.
+In the case of tagged/discriminated unions, it makes sense to print out a specific union member based on how the union is tagged. This can be done by using the @ToPrintWhen UDA. This is a little cumbersome to use. See the examples.d file for an demonstration of how to apply this UDA to a tagged/discriminated union.
 
 ### Initializing djinnprint
 
@@ -84,7 +82,6 @@ This project is currently a very early proof-of-concept and is in no way product
 
 * Do not use .stringof for code generation; use __traits(identifier, var) instead. See this page for details: https://dlang.org/spec/property.html#stringof
 * Print doubles.
-* Figure out how to make @ToPrintWhen -betterC compatible.
 * Testing on Windows.
 * Custom float/double to string conversion that doesn't rely on snprintf.
 * Add formatting options for variables (commas for integers, hex output, etc.). Additionally, there should be an option to print the name of each struct type before the value of its members. This could be useful in code generation. For instance, printing `Vect2(1.0000f, 1.0000f)` would be useful for this case rather than `(1.0000, 1.000)`, the latter of which is the default behavior.

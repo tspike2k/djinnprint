@@ -207,7 +207,7 @@ union Entity
     Entity_Door   door;
 }
 
-void taggedUnionExample()
+void taggedUnionExamples()
 {
     printOut("\n\n----Tagged union examples (WIP)----\n");
     
@@ -244,7 +244,7 @@ extern(C) int main()
     
     printOutExamples();
     
-    taggedUnionExample();
+    taggedUnionExamples();
  
     return 0;
 }

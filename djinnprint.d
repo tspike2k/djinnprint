@@ -9,8 +9,6 @@
 
 // - Print doubles
 
-// - Figure out how to make ToPrintWhen -betterC compatible
-
 // - Testing on Windows
 
 // - Custom float/double to string conversion that doesn't rely on snprintf
@@ -36,39 +34,6 @@ public struct ToPrintWhen(T)
     string unionTag;
     T[]      cases;
     string[] members;
-}
-
-string genUDASwitchStatement(alias uda, string formatBegin, string formatEnd)()
-{
-    string result;
-    static if(!disableToPrintWhen)
-    {   
-        static if (is(typeof(uda.cases[0]) == enum))
-        {
-            alias tagType = OriginalType!(typeof(uda.cases[0]));
-        }
-        else
-        {
-            alias tagType = typeof(uda.cases[0]);
-        }
-        
-        char[30] buffer; 
-        FormatSpec spec;
-        
-        result ~= "switch (cast(" ~ tagType.stringof ~ ")t." ~ uda.unionTag ~ ")\n{\n";
-        static foreach(i; 0 .. uda.cases.length)
-        {
-            {
-                size_t len = intToString(buffer, cast(tagType)uda.cases[i], 10, spec);
-                result ~= "    case " ~ buffer[0 .. len] ~ ": " ~ formatBegin ~ "t." ~ uda.members[i] ~ formatEnd ~ "; break;\n";                     
-            }
-        }
-        
-        result ~= "    default: assert(0, \"Unable to print union: union tag type unhandled\"); break;";
-        result ~= "\n}";
-    }
-    
-    return result;
 }
 
 @nogc nothrow:
@@ -106,15 +71,6 @@ else version(Windows)
 else
 {
     static assert(0, "Unsupported OS.");
-}
-
-version(D_ModuleInfo)
-{
-    enum disableToPrintWhen = false;
-}
-else
-{
-    enum disableToPrintWhen = true;
 }
 
 immutable char[] intToCharTable = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f'];
@@ -240,12 +196,21 @@ ulong formatArg(T)(T t, in FormatSpec spec, char[] buffer)
             }
             bytesWritten += safeCopy(buffer[bytesWritten .. $], ")");
         }
-        else if (hasUDA!(T, ToPrintWhen) && !disableToPrintWhen)
+        else if (hasUDA!(T, ToPrintWhen))
         {
             enum uda = getUDAs!(T, ToPrintWhen)[0];
             static assert(uda.cases.length == uda.members.length);
             
-            mixin(genUDASwitchStatement!(uda, "bytesWritten += formatArg(", ", spec, buffer[bytesWritten .. $])"));
+            tagSwitch: switch(mixin("t." ~ uda.unionTag))
+            {
+                static foreach(i, c; uda.cases)
+                {
+                    case c: bytesWritten += formatArg(mixin("t." ~ uda.members[i]), spec, buffer[bytesWritten .. $]);
+                    break tagSwitch;
+                }
+            
+                default: assert(0); break;
+            }
         }
         else
         {
@@ -364,12 +329,21 @@ void formatArg(T)(T t, in FormatSpec spec, FileHandle file)
             }
             printFile(file, ")");
         }
-        else if (hasUDA!(T, ToPrintWhen) && !disableToPrintWhen)
+        else if (hasUDA!(T, ToPrintWhen))
         {
             enum uda = getUDAs!(T, ToPrintWhen)[0];
             static assert(uda.cases.length == uda.members.length);
             
-            mixin(genUDASwitchStatement!(uda, "formatArg(", ", spec, file)"));
+            tagSwitch: switch(mixin("t." ~ uda.unionTag))
+            {
+                static foreach(i, c; uda.cases)
+                {
+                    case c: formatArg(mixin("t." ~ uda.members[i]), spec, file);
+                    break tagSwitch;
+                }
+            
+                default: assert(0); break;
+            }
         }
         else
         {
