@@ -38,39 +38,52 @@ public struct ToPrintWhen(T)
 
 @nogc nothrow:
 
-version(Posix)
+// Flags to configure the library
+enum use_cstdio = true;
+
+static if(use_cstdio)
 {
-    alias FileHandle = int;
-    enum FileHandle stdOut = 1;
-    enum FileHandle stdErr = 2;
-    
-    public void init(){};
-}
-else version(Windows)
-{
-    // TODO: Test on Windows
-    import core.sys.windows : FileHandle, GetStdHandle;
-    alias FileHandle = HANDLE;
-    __gshared FileHandle stdOut;
-    __gshared FileHandle stdErr;
-    
-    public void init()
-    {
-        HANDLE stdOut = GetStdHandle(STD_OUTPUT_HANDLE);
-        HANDLE stdErr = GetStdHandle(STD_ERROR_HANDLE);
-    }
-    
-    version(D_ModuleInfo)
-    {
-        static this()
-        {
-            init();
-        }
-    }
+    import core.stdc.stdio : FILE, stdout, stderr;
+    alias FileHandle = FILE*;
+    alias stdOut = stdout;
+    alias stdErr = stderr;
 }
 else
 {
-    static assert(0, "Unsupported OS.");
+    version(Posix)
+    {
+        alias FileHandle = int;
+        enum FileHandle stdOut = 1;
+        enum FileHandle stdErr = 2;
+
+        public void init(){};
+    }
+    else version(Windows)
+    {
+        // TODO: Test on Windows
+        import core.sys.windows : FileHandle, GetStdHandle;
+        alias FileHandle = HANDLE;
+        __gshared FileHandle stdOut;
+        __gshared FileHandle stdErr;
+
+        public void init()
+        {
+            HANDLE stdOut = GetStdHandle(STD_OUTPUT_HANDLE);
+            HANDLE stdErr = GetStdHandle(STD_ERROR_HANDLE);
+        }
+
+        version(D_ModuleInfo)
+        {
+            static this()
+            {
+                init();
+            }
+        }
+    }
+    else
+    {
+        static assert(0, "Unsupported OS.");
+    }
 }
 
 immutable char[] intToCharTable = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f'];
@@ -78,19 +91,19 @@ immutable char[] intToCharTable = ['0', '1', '2', '3', '4', '5', '6', '7', '8', 
 size_t length(const(char*) s)
 {
     size_t result = 0;
-    
+
     while(s[result] != '\0')
     {
         result++;
     }
-    
+
     return result;
 }
 
 ulong formatArg(T)(T t, in FormatSpec spec, char[] buffer)
 {
     ulong bytesWritten = 0;
-    
+
     static if (is(T == enum))
     {
         static foreach (i, member; EnumMembers!T)
@@ -114,12 +127,12 @@ ulong formatArg(T)(T t, in FormatSpec spec, char[] buffer)
     }
     else static if (isIntegral!T)
     {
-        bytesWritten = intToString(buffer, t, 10, spec);   
+        bytesWritten = intToString(buffer, t, 10, spec);
     }
     else static if (is(T == float))
     {
         // TODO: Eleminate our dependence on snprintf and use our own float formatting functions. Look to stb_sprintf?
-        // Note that even Phobos (the D standard library) used snprintf to format floats. 
+        // Note that even Phobos (the D standard library) used snprintf to format floats.
         import core.stdc.stdio : snprintf;
         bytesWritten = snprintf(buffer.ptr, buffer.length, "%f", t);
     }
@@ -133,7 +146,7 @@ ulong formatArg(T)(T t, in FormatSpec spec, char[] buffer)
         {
             bytesWritten = buffer.length - 1;
         }
-    
+
         foreach(charIndex; 0 .. buffer.length - 1)
         {
             buffer[charIndex] = t[charIndex];
@@ -143,7 +156,7 @@ ulong formatArg(T)(T t, in FormatSpec spec, char[] buffer)
                 break;
             }
         }
-        
+
         version(assertOnTruncation)
         {
             assert(bytesWritten != size_t.max);
@@ -160,7 +173,7 @@ ulong formatArg(T)(T t, in FormatSpec spec, char[] buffer)
         {
             bytesWritten = t.length;
         }
-        
+
         buffer[0..bytesWritten] = t[0..bytesWritten];
     }
     else static if(is(T == struct))
@@ -177,7 +190,7 @@ ulong formatArg(T)(T t, in FormatSpec spec, char[] buffer)
                 bytesWritten += safeCopy(buffer[bytesWritten .. $], ", ");
             }
         }
-        
+
         bytesWritten += safeCopy(buffer[bytesWritten .. $], ")");
     }
     else static if(is(T == union))
@@ -200,7 +213,7 @@ ulong formatArg(T)(T t, in FormatSpec spec, char[] buffer)
         {
             enum uda = getUDAs!(T, ToPrintWhen)[0];
             static assert(uda.cases.length == uda.members.length);
-            
+
             tagSwitch: switch(mixin("t." ~ uda.unionTag))
             {
                 static foreach(i, c; uda.cases)
@@ -208,7 +221,7 @@ ulong formatArg(T)(T t, in FormatSpec spec, char[] buffer)
                     case c: bytesWritten += formatArg(mixin("t." ~ uda.members[i]), spec, buffer[bytesWritten .. $]);
                     break tagSwitch;
                 }
-            
+
                 default: assert(0); break;
             }
         }
@@ -219,7 +232,7 @@ ulong formatArg(T)(T t, in FormatSpec spec, char[] buffer)
                 pragma(msg, "ERR: Unhandled union " ~ T.stringof ~ ". No @toPrint UDA found.");
                 static assert(0);
             }
-        
+
             bytesWritten += safeCopy(buffer[bytesWritten .. $], "union ");
             bytesWritten += safeCopy(buffer[bytesWritten .. $], T.stringof);
         }
@@ -227,16 +240,16 @@ ulong formatArg(T)(T t, in FormatSpec spec, char[] buffer)
     else static if(isArray!T)
     {
         bytesWritten += safeCopy(buffer[bytesWritten .. $], "[");
-        
+
         foreach(i; 0 .. t.length)
         {
-            bytesWritten += formatArg(t[i], spec, buffer[bytesWritten .. $]);        
+            bytesWritten += formatArg(t[i], spec, buffer[bytesWritten .. $]);
             if (i < t.length - 1)
             {
                 bytesWritten += safeCopy(buffer[bytesWritten .. $], ", ");
             }
         }
-        
+
         bytesWritten += safeCopy(buffer[bytesWritten .. $], "]");
     }
     else static if (isPointer!T)
@@ -248,12 +261,12 @@ ulong formatArg(T)(T t, in FormatSpec spec, char[] buffer)
         pragma(msg, "ERR in print.formatArg(...): Unhandled type " ~ T.stringof);
         static assert(0);
     }
-    
+
     return bytesWritten;
 }
 
 void formatArg(T)(T t, in FormatSpec spec, FileHandle file)
-{   
+{
     static if (is(T == enum))
     {
         static foreach (i, member; EnumMembers!T)
@@ -284,14 +297,14 @@ void formatArg(T)(T t, in FormatSpec spec, FileHandle file)
     else static if (is(T == float))
     {
         // TODO: Eleminate our dependence on snprintf and use our own float formatting functions. Look to stb_sprintf?
-        // Note that even Phobos (the D standard library) used snprintf to format floats. 
+        // Note that even Phobos (the D standard library) used snprintf to format floats.
         import core.stdc.stdio : snprintf;
         char[512] buffer;
         auto written = snprintf(buffer.ptr, buffer.length, "%f", t);
         printFile(file, buffer[0..written]);
     }
     else static if(is(T == char*) || is(T == const(char)*) || is(T == immutable(char)*))
-    {   
+    {
         auto msg = t[0 .. length(t)];
         printFile(file, msg);
     }
@@ -333,7 +346,7 @@ void formatArg(T)(T t, in FormatSpec spec, FileHandle file)
         {
             enum uda = getUDAs!(T, ToPrintWhen)[0];
             static assert(uda.cases.length == uda.members.length);
-            
+
             tagSwitch: switch(mixin("t." ~ uda.unionTag))
             {
                 static foreach(i, c; uda.cases)
@@ -341,7 +354,7 @@ void formatArg(T)(T t, in FormatSpec spec, FileHandle file)
                     case c: formatArg(mixin("t." ~ uda.members[i]), spec, file);
                     break tagSwitch;
                 }
-            
+
                 default: assert(0); break;
             }
         }
@@ -359,16 +372,16 @@ void formatArg(T)(T t, in FormatSpec spec, FileHandle file)
     else static if(isArray!T)
     {
         printFile(file, "[");
-        
+
         foreach(i; 0 .. t.length)
         {
-            formatArg(t[i], spec, file);       
+            formatArg(t[i], spec, file);
             if (i < t.length - 1)
             {
                 printFile(file, ", ");
             }
         }
-        
+
         printFile(file, "]");
     }
     else static if (isPointer!T)
@@ -399,10 +412,10 @@ FormatSpec getFormatSpec(in char[] command)
 {
     import core.stdc.stdlib : atoi;
     import core.stdc.string : memcpy;
-    
+
     FormatSpec result;
     assert(isDigit(command[0]), "Format command must start with numeric argument index.");
-    
+
     size_t end = 0;
     foreach(i, _; command)
     {
@@ -412,14 +425,14 @@ FormatSpec getFormatSpec(in char[] command)
             break;
         }
     }
-    
+
     char[12] argIndexStr;
     assert(end < argIndexStr.length);
     memcpy(argIndexStr.ptr, command.ptr, end);
     argIndexStr[end] = '\0';
     uint argIndex = atoi(argIndexStr.ptr);
     result.argIndex = argIndex;
-    
+
     return result;
 }
 
@@ -433,24 +446,24 @@ if(isSomeString!T || isSomeChar!(source([0])))
 
 size_t intToString(T)(char[] buffer, T t, ubyte base, FormatSpec spec)
 if(isIntegral!T)
-{   
+{
     static if (isSigned!T)
     {
         import std.math : abs, sgn;
         T sign = cast(T)sgn(t);
         t = abs(t); // NOTE: Strip off the sign to prevent the mod operator from giving us a negative array index.
     }
-    
+
     char[30] conversion; // NOTE: This should be plenty large enough to hold even the maximum value of a ulong.
     size_t finish = conversion.length;
-    
+
     foreach_reverse(place; 0..finish)
     {
         conversion[place] = intToCharTable[t % base];
         t /= base;
-        
+
         // TODO: Add commas in the conversion string?
-        
+
         if(t == 0)
         {
             static if (isSigned!T)
@@ -461,18 +474,18 @@ if(isIntegral!T)
                     conversion[place] = '-';
                 }
             }
-            
+
             if(base == 16 && place >= 2)
             {
                 conversion[--place] = 'x';
                 conversion[--place] = '0';
             }
-        
+
             finish = place;
             break;
         }
     }
-    
+
     size_t charsWritten = conversion.length - finish;
     size_t minToCopy = void;
     if(charsWritten < buffer.length)
@@ -484,7 +497,7 @@ if(isIntegral!T)
         version(assertOnTruncation) assert(0, "ERR: buffer truncated.");
         minToCopy = buffer.length;
     }
-    
+
     buffer[0..minToCopy] = conversion[finish..finish+minToCopy];
     return minToCopy;
 }
@@ -494,9 +507,9 @@ public:
 enum printCommon = `
     size_t fmtCursor = 0;
     size_t fmtCopyToBufferIndex = 0;
-    
+
     while(fmtCursor < fmt.length)
-    {        
+    {
         if (fmt[fmtCursor] == '{')
         {
             if (fmtCursor < fmt.length - 1 && fmt[fmtCursor+1] == '{')
@@ -505,12 +518,12 @@ enum printCommon = `
                 mixin(outputPolicy);
                 fmtCursor++;
                 fmtCopyToBufferIndex = fmtCursor;
-                
+
                 continue;
             }
-            
+
             mixin(outputPolicy);
-        
+
             fmtCursor++;
             size_t commandStart = fmtCursor;
             size_t commandEnd   = fmtCursor;
@@ -524,14 +537,14 @@ enum printCommon = `
                 }
                 fmtCursor++;
             }
-            
+
             fmtCopyToBufferIndex = fmtCursor;
-            
+
             auto formatCommand = fmt[commandStart .. commandEnd];
-            
+
             auto formatSpec = getFormatSpec(formatCommand);
             assert(formatSpec.argIndex < args.length, "ERR: Format index exceeds length of provided arguments.");
-            
+
             // NOTE: Variadic template argument indexing based on std.format.getNth(...) from Phobos.
             outer: switch(formatSpec.argIndex)
             {
@@ -542,7 +555,7 @@ enum printCommon = `
                         mixin(formatPolicy);
                     } break outer;
                 }
-                
+
                 default:
                 {
                     assert(0,"ERR: Unable to access variadic argument.");
@@ -559,13 +572,13 @@ enum printCommon = `
 
 char[] format(T, Args...)(T fmt, char[] buffer, Args args)
 if(isArray!(typeof(fmt)) && isSomeChar!(typeof(fmt[0])))
-{  
+{
     size_t bufferWritten = 0;
     enum outputPolicy = `bufferWritten += safeCopy(buffer[bufferWritten..buffer.length], fmt[fmtCopyToBufferIndex .. fmtCursor]);`;
     enum formatPolicy = `bufferWritten += formatArg(args[i], formatSpec, buffer[bufferWritten .. buffer.length]);`;
-    
+
     mixin(printCommon);
-    
+
     size_t zeroIndex = bufferWritten < buffer.length ? bufferWritten : buffer.length - 1;
     buffer[zeroIndex] = '\0';
     return buffer[0..bufferWritten];
@@ -575,7 +588,7 @@ void printOut(T, Args...)(T fmt, Args args)
 if(isArray!(typeof(fmt)) && isSomeChar!(typeof(fmt[0])))
 {
     FileHandle file = stdOut;
-    
+
     enum outputPolicy = `printFile(file, fmt[fmtCopyToBufferIndex .. fmtCursor]);`;
     enum formatPolicy = `formatArg(args[i], formatSpec, file);`;
 
@@ -593,7 +606,7 @@ void printErr(T, Args...)(T fmt, Args args)
 if(isArray!(typeof(fmt)) && isSomeChar!(typeof(fmt[0])))
 {
     FileHandle file = stdErr;
-    
+
     enum outputPolicy = `printFile(file, fmt[fmtCopyToBufferIndex..fmtCursor]);`;
     enum formatPolicy = `formatArg(args[i], formatSpec, file);`;
 
@@ -619,24 +632,35 @@ if(isArray!(typeof(fmt)) && isSomeChar!(typeof(fmt[0])))
 void printFile(T)(FileHandle file, T msg)
 if(isArray!(typeof(msg)) && isSomeChar!(typeof(msg[0])))
 {
-    version(Posix)
+    static if(use_cstdio)
     {
-        import core.sys.posix.unistd : write;
-        if (file != -1)
+        import core.stdc.stdio: fwrite;
+        if(file)
         {
-            write(file, msg.ptr, msg.length);        
-        }
-    }
-    else version(Windows)
-    {
-        import core.sys.windows : WriteFile, INVALID_HANDLE_VALUE;
-        if(file != INVALID_HANDLE_VALUE)
-        {
-            WriteFile(file, msg.ptr, msg.length, null, null);        
+            fwrite(msg.ptr, msg[0].sizeof, msg.length, file);
         }
     }
     else
     {
-        static assert(0, "Unsupported OS.");
+        version(Posix)
+        {
+            import core.sys.posix.unistd : write;
+            if (file != -1)
+            {
+                write(file, msg.ptr, msg.length);
+            }
+        }
+        else version(Windows)
+        {
+            import core.sys.windows : WriteFile, INVALID_HANDLE_VALUE;
+            if(file != INVALID_HANDLE_VALUE)
+            {
+                WriteFile(file, msg.ptr, msg.length, null, null);
+            }
+        }
+        else
+        {
+            static assert(0, "Unsupported OS.");
+        }
     }
 }
