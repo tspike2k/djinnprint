@@ -6,7 +6,7 @@ import djinnprint;
 
 @nogc nothrow:
 
-enum longString = 
+enum longString =
 `1999. What appeared to be
 a harmless meteorite
 crashing into the Nevada
@@ -75,9 +75,9 @@ union Vect2
 void formatExamples()
 {
     printOut("----format(...) Examples----\n");
-    
+
     char[512] buffer;
-    
+
     string formatString = "Arguments can be printed out of order: {2} {0} {1}\n";
     int t = 42;
     auto result = format(formatString, buffer, 1, -2, t);
@@ -86,14 +86,14 @@ void formatExamples()
     char[] msg = cast(char[])"Hello, world!";
     float f = -32.0f;
     printOut(format(formatString, buffer, 2, msg, f));
-    
+
     char[24] charArray = "This is a char array.";
     printOut(format("char array: `{0}`\n", buffer, charArray));
-    
+
     printOut(format("Can even print cstrings: `{0}`\n", buffer, msg.ptr));
-    
+
     char nullMessage = '\0';
-    
+
     printOut(format("Null string: `{0}`\n", buffer, &nullMessage));
     printOut(format("This is an {{escape character test}.\n", buffer));
 
@@ -102,22 +102,22 @@ void formatExamples()
     printOut("\n\n");
     printOut(format("Long cstring: `{0}`\n", buffer, longString.ptr));
     printOut("\n\n");
-    
+
     TestStruct test = TestStruct([1, 2], 3.0f);
     printOut(format("The struct is: {0}{1}\n", buffer, typeof(test).stringof, test));
-    
+
     int[5] arrayTest = [0, 1, 2, 3, 4];
     printOut(format("arrayTest: {0}\n", buffer, arrayTest));
-    
+
     TestEnum te = TestEnum.BETA;
     printOut(format("The enum is {0}\n", buffer, te));
-    
+
     Vect2 vec = Vect2(2.0f, 3.0f);
     printOut(format("Vect2 vec: {0}\n", buffer, vec));
-    
+
     Outer outer = Outer(Inner(TestEnum.GAMMA, 2, 4), 3.1415f);
     printOut(format("outer == {0}\n", buffer, outer));
-    
+
     printOut(format("The address of outer is {0}\n", buffer, &outer));
 }
 
@@ -132,14 +132,14 @@ void printOutExamples()
     char[] msg = cast(char[])"Hello, world!";
     float f = -32.0f;
     printOut(formatString, 2, msg, f);
-    
+
     char[24] charArray = "This is a char array.";
     printOut("char array: `{0}`\n", charArray);
-    
+
     printOut("Can even print cstrings: `{0}`\n", msg.ptr);
-    
+
     char nullMessage = '\0';
-    
+
     printOut("Null string: `{0}`\n", &nullMessage);
     printOut("This is an {{escape character test}.\n");
 
@@ -148,22 +148,22 @@ void printOutExamples()
     printOut("\n\n");
     printOut("Long cstring: `{0}`\n", longString.ptr);
     printOut("\n\n");
-    
+
     TestStruct test = TestStruct([1, 2], 3.0f);
     printOut("The struct is: {0}{1}\n", typeof(test).stringof, test);
-    
+
     int[5] arrayTest = [0, 1, 2, 3, 4];
     printOut("arrayTest: {0}\n", arrayTest);
-    
+
     TestEnum te = TestEnum.BETA;
     printOut("The enum is {0}\n", te);
-    
+
     Vect2 vec = Vect2(2.0f, 3.0f);
     printOut("Vect2 vec: {0}\n", vec);
-    
+
     Outer outer = Outer(Inner(TestEnum.GAMMA, 2, 4), 3.1415f);
     printOut("outer == {0}\n", outer);
-    
+
     printOut("The address of outer is {0}\n", &outer);
 }
 
@@ -192,12 +192,12 @@ struct Entity_Door
 {
     Entity_Common common;
     alias common this;
-    
+
     bool opened;
 }
 
 @ToPrintWhen!EntityType("common.type",
-    [EntityType.PLAYER, EntityType.DOOR], 
+    [EntityType.PLAYER, EntityType.DOOR],
     ["player", "door"]
 )
 union Entity
@@ -210,28 +210,30 @@ union Entity
 void taggedUnionExamples()
 {
     printOut("\n\n----Tagged union examples (WIP)----\n");
-    
+
     char[512] buffer;
-    
+
+    /+
     Entity player;
     auto p = &player.player;
     p.pos = Vect2(2, 4);
     p.vel = Vect2(12, 16);
     p.type = EntityType.PLAYER;
     p.name = "Rolf";
-    
+
     Entity door;
     auto d = &door.door;
     d.pos = Vect2(3, 9);
     d.type = EntityType.DOOR;
     d.opened = true;
-    
+
     printOut("{0}\n", player);
     printOut(format("{0}\n", buffer, door));
+    +/
 }
 
 extern(C) int main()
-{    
+{
     version(D_ModuleInfo){}
     else
     {
@@ -239,12 +241,12 @@ extern(C) int main()
         // such as in the case when -betterC is used.
         djinnprint.init();
     }
-    
+
     formatExamples();
-    
+
     printOutExamples();
-    
-    taggedUnionExamples();
- 
+
+    //taggedUnionExamples();
+
     return 0;
 }

@@ -15,8 +15,6 @@
 
 // - Put quotes around string values when printing functions/unions
 
-// - Figure out how to reduce code duplication between the two versions of formatArg
-
 // - Add formatting options for variables (commas for integers, hex output, etc.)
 //   Additionally, there should be an option to print the name of each struct type before the value of its members. This could be useful in code generation.
 //   For instance, printing `Vect2(1.0000f, 1.0000f)` would be useful for this case rather than `(1.0000, 1.000)`, the latter of which is the default behavior.
@@ -115,10 +113,39 @@ size_t length(const(char*) s)
     return result;
 }
 
-ulong formatArg(T)(T t, in FormatSpec spec, char[] buffer)
+ulong formatArg(T, Dest)(ref T t, in FormatSpec spec, Dest dest)
+if(is(Dest == FileHandle) || (isArray!Dest && is(ArrayTarget!Dest == char)))
 {
+    // NOTE: The return value of formatArg is meaningless when dest is a FileHandle.
     ulong bytesWritten = 0;
     bool truncated = false;
+
+    static if (is(Dest == FileHandle))
+    {
+        template outPolicy(string name)
+        {
+            enum outPolicy = "printFile(dest, " ~ name ~ ");";
+        }
+
+        template formatPolicy(string name)
+        {
+            enum formatPolicy = "formatArg(" ~ name ~ ", spec, dest);";
+        }
+    }
+    else
+    {
+        template outPolicy(string name)
+        {
+            enum outPolicy = "bytesWritten += safeCopy(dest[bytesWritten .. $], " ~ name ~ ", &truncated);";
+        }
+
+        template formatPolicy(string name)
+        {
+            enum formatPolicy = "bytesWritten += formatArg(" ~ name ~ ", spec, dest[bytesWritten .. $]);";
+        }
+
+        auto buffer = dest[0 .. $];
+    }
 
     static if (is(T == enum))
     {
@@ -126,7 +153,7 @@ ulong formatArg(T)(T t, in FormatSpec spec, char[] buffer)
         {
             if (t == member)
             {
-                bytesWritten = safeCopy(buffer, __traits(identifier, EnumMembers!T[i]), &truncated);
+                mixin(outPolicy!(`__traits(identifier, EnumMembers!T[i])`));
             }
         }
     }
@@ -134,61 +161,76 @@ ulong formatArg(T)(T t, in FormatSpec spec, char[] buffer)
     {
         if(t)
         {
-            bytesWritten = safeCopy(buffer, "true", &truncated);
+            mixin(outPolicy!`"true"`);
         }
         else
         {
-            bytesWritten = safeCopy(buffer, "false", &truncated);
+            mixin(outPolicy!`"false"`);
         }
     }
     else static if (isIntegral!T)
     {
-        bytesWritten = intToString(buffer, t, 10, spec);
+        static if(is(Dest == FileHandle))
+        {
+            char[30] buffer;
+            auto length = intToString(buffer, t, 10, spec);
+            printFile(dest, buffer[0 .. length]);
+        }
+        else
+        {
+            bytesWritten += intToString(dest, t, 10, spec);
+        }
     }
     else static if (is(T == float))
     {
         // TODO: Eleminate our dependence on snprintf and use our own float formatting functions. Look to stb_sprintf?
         // Note that even Phobos (the D standard library) used snprintf to format floats.
         import core.stdc.stdio : snprintf;
-        bytesWritten = snprintf(buffer.ptr, buffer.length, "%f", t);
+        static if(is(Dest == FileHandle))
+        {
+            char[512] buffer;
+            auto written = snprintf(buffer.ptr, buffer.length, "%f", t);
+            printFile(dest, buffer[0..written]);
+        }
+        else
+        {
+            bytesWritten = snprintf(buffer.ptr, buffer.length, "%f", t);
+        }
     }
     else static if(isCString!T)
     {
         size_t srcLength = 0;
         while(t[srcLength] != '\0') srcLength++;
-
-        bytesWritten = safeCopy(buffer, t[0 .. srcLength], &truncated);
+        mixin(outPolicy!`t[0 .. srcLength]`);
     }
     else static if(isCharArray!T)
     {
-        bytesWritten = safeCopy(buffer, t, &truncated);
+        mixin(outPolicy!"t");
     }
     else static if(is(T == struct))
     {
-        bytesWritten += safeCopy(buffer[bytesWritten .. $], "(", &truncated);
+        mixin(outPolicy!`"("`);
+
         auto members = t.tupleof;
         static foreach(i, member; members)
         {
-            bytesWritten += formatArg(member, spec, buffer[bytesWritten .. $]);
-            static if(i < members.length - 1) bytesWritten += safeCopy(buffer[bytesWritten .. $], ", ", &truncated);
+            mixin(formatPolicy!`member`);
+            static if(i < members.length - 1) mixin(outPolicy!`", "`);
         }
-        bytesWritten += safeCopy(buffer[bytesWritten .. $], ")", &truncated);
+        mixin(outPolicy!`")"`);
     }
     else static if(is(T == union))
     {
         alias toPrintMembers = getSymbolsByUDA!(T, ToPrint);
         static if (toPrintMembers.length > 0)
         {
-            bytesWritten += safeCopy(buffer[bytesWritten .. $], "(", &truncated);
+            mixin(outPolicy!`"("`);
             static foreach(i, member; toPrintMembers)
             {
-                bytesWritten += formatArg(mixin("t." ~ member.stringof), spec, buffer[bytesWritten .. $]);
-                static if (i < toPrintMembers.length - 1)
-                {
-                    bytesWritten += safeCopy(buffer[bytesWritten .. $], ", ", &truncated);
-                }
+                mixin(formatPolicy!`mixin("t." ~ member.stringof)`);
+                static if (i < toPrintMembers.length - 1) mixin(outPolicy!`", "`);
             }
-            bytesWritten += safeCopy(buffer[bytesWritten .. $], ")", &truncated);
+            mixin(outPolicy!`")"`);
         }
         else if (hasUDA!(T, ToPrintWhen))
         {
@@ -199,7 +241,7 @@ ulong formatArg(T)(T t, in FormatSpec spec, char[] buffer)
             {
                 static foreach(i, c; uda.cases)
                 {
-                    case c: bytesWritten += formatArg(mixin("t." ~ uda.members[i]), spec, buffer[bytesWritten .. $]);
+                    case c: mixin(formatPolcy!`mixin("t." ~ uda.members[i]`);
                     break tagSwitch;
                 }
 
@@ -214,167 +256,45 @@ ulong formatArg(T)(T t, in FormatSpec spec, char[] buffer)
                 static assert(0);
             }
 
-            bytesWritten += safeCopy(buffer[bytesWritten .. $], "union ", &truncated);
-            bytesWritten += safeCopy(buffer[bytesWritten .. $], T.stringof, &truncated);
+            mixin(outPolicy!`"union "`);
+            mixin(outPolicy!`T.stringof`);
         }
     }
     else static if(isArray!T)
     {
-        bytesWritten += safeCopy(buffer[bytesWritten .. $], "[", &truncated);
+        mixin(outPolicy!`"["`);
 
         foreach(i; 0 .. t.length)
         {
-            bytesWritten += formatArg(t[i], spec, buffer[bytesWritten .. $]);
+            mixin(formatPolicy!`t[i]`);
             if (i < t.length - 1)
             {
-                bytesWritten += safeCopy(buffer[bytesWritten .. $], ", ", &truncated);
+                mixin(outPolicy!`", "`);
             }
         }
 
-        bytesWritten += safeCopy(buffer[bytesWritten .. $], "]", &truncated);
+        mixin(outPolicy!`"]"`);
     }
     else static if (isPointer!T)
     {
-        bytesWritten = intToString(buffer, cast(size_t)t, 16, spec);
+        static if(is(Dest == FileHandle))
+        {
+            char[30] buffer;
+            auto length = intToString(buffer, cast(size_t)t, 16, spec);
+            printFile(dest, buffer[0 .. length]);
+        }
+        else
+        {
+            bytesWritten = intToString(buffer, cast(size_t)t, 16, spec);
+        }
     }
     else
     {
         pragma(msg, "ERR in print.formatArg(...): Unhandled type " ~ T.stringof);
         static assert(0);
     }
-
-    static if(assertOnTruncation) assert(!truncated);
 
     return bytesWritten;
-}
-
-void formatArg(T)(T t, in FormatSpec spec, FileHandle file)
-{
-    static if (is(T == enum))
-    {
-        static foreach (i, member; EnumMembers!T)
-        {
-            if (t == member)
-            {
-                printFile(file, __traits(identifier, EnumMembers!T[i]));
-            }
-        }
-    }
-    else static if(is(T == bool))
-    {
-        if(t)
-        {
-            printFile(file, "true");
-        }
-        else
-        {
-            printFile(file, "false");
-        }
-    }
-    else static if (isIntegral!T)
-    {
-        char[30] buffer;
-        auto length = intToString(buffer, t, 10, spec);
-        printFile(file, buffer[0 .. length]);
-    }
-    else static if (is(T == float))
-    {
-        // TODO: Eleminate our dependence on snprintf and use our own float formatting functions. Look to stb_sprintf?
-        // Note that even Phobos (the D standard library) used snprintf to format floats.
-        import core.stdc.stdio : snprintf;
-        char[512] buffer;
-        auto written = snprintf(buffer.ptr, buffer.length, "%f", t);
-        printFile(file, buffer[0..written]);
-    }
-    else static if(isCString!T)
-    {
-        auto msg = t[0 .. length(t)];
-        printFile(file, msg);
-    }
-    else static if(isCharArray!T)
-    {
-        printFile(file, t);
-    }
-    else static if(is(T == struct))
-    {
-        printFile(file, "(");
-        auto members = t.tupleof;
-        static foreach(i, member; members)
-        {
-            formatArg(member, spec, file);
-            static if(i < members.length - 1) printFile(file, ", ");
-        }
-        printFile(file, ")");
-    }
-    else static if(is(T == union))
-    {
-        alias toPrintMembers = getSymbolsByUDA!(T, ToPrint);
-        static if (toPrintMembers.length > 0)
-        {
-            printFile(file, "(");
-            static foreach(i, member; toPrintMembers)
-            {
-                formatArg(mixin("t." ~ member.stringof), spec, file);
-                static if (i < toPrintMembers.length - 1)
-                {
-                    printFile(file, ", ");
-                }
-            }
-            printFile(file, ")");
-        }
-        else if (hasUDA!(T, ToPrintWhen))
-        {
-            enum uda = getUDAs!(T, ToPrintWhen)[0];
-            static assert(uda.cases.length == uda.members.length);
-
-            tagSwitch: switch(mixin("t." ~ uda.unionTag))
-            {
-                static foreach(i, c; uda.cases)
-                {
-                    case c: formatArg(mixin("t." ~ uda.members[i]), spec, file);
-                    break tagSwitch;
-                }
-
-                default: assert(0); break;
-            }
-        }
-        else
-        {
-            static if(assertOnUnhandledUnion)
-            {
-                pragma(msg, "ERR: Unhandled union " ~ T.stringof ~ ". No @toPrint UDA found.");
-                static assert(0);
-            }
-            printFile(file, "union ");
-            printFile(file, T.stringof);
-        }
-    }
-    else static if(isArray!T)
-    {
-        printFile(file, "[");
-
-        foreach(i; 0 .. t.length)
-        {
-            formatArg(t[i], spec, file);
-            if (i < t.length - 1)
-            {
-                printFile(file, ", ");
-            }
-        }
-
-        printFile(file, "]");
-    }
-    else static if (isPointer!T)
-    {
-        char[30] buffer;
-        auto length = intToString(buffer, cast(size_t)t, 16, spec);
-        printFile(file, buffer[0 .. length]);
-    }
-    else
-    {
-        pragma(msg, "ERR in print.formatArg(...): Unhandled type " ~ T.stringof);
-        static assert(0);
-    }
 }
 
 struct FormatSpec
