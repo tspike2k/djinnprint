@@ -214,7 +214,9 @@ if(is(Dest == FileHandle) || (isArray!Dest && is(ArrayTarget!Dest == char)))
         auto members = t.tupleof;
         static foreach(i, member; members)
         {
+            static if(isCharArray!(typeof(member)) || isCString!(typeof(member))) mixin(outPolicy!`"\""`);
             mixin(formatPolicy!`member`);
+            static if(isCharArray!(typeof(member)) || isCString!(typeof(member))) mixin(outPolicy!`"\""`);
             static if(i < members.length - 1) mixin(outPolicy!`", "`);
         }
         mixin(outPolicy!`")"`);
