@@ -207,13 +207,31 @@ union Entity
     Entity_Door   door;
 }
 
-void taggedUnionExamples()
+// TODO: Decide how to format structs with anonymous unions.
+
+enum AnonUnionType
+{
+    NAME,
+    ID
+}
+
+struct AnonUnion
+{
+    AnonUnionType type;
+
+    union
+    {
+        char[512] name;
+        int id;
+    };
+}
+
+void unionExamples()
 {
     printOut("\n\n----Tagged union examples (WIP)----\n");
 
     char[512] buffer;
 
-    /+
     Entity player;
     auto p = &player.player;
     p.pos = Vect2(2, 4);
@@ -229,7 +247,11 @@ void taggedUnionExamples()
 
     printOut("{0}\n", player);
     printOut(format("{0}\n", buffer, door));
-    +/
+
+    AnonUnion an;
+    an.type = AnonUnionType.ID;
+    an.name = cast(char[])"Anon union name";
+    printOut("{0}\n", an);
 }
 
 extern(C) int main()
@@ -246,7 +268,7 @@ extern(C) int main()
 
     printOutExamples();
 
-    //taggedUnionExamples();
+    unionExamples();
 
     return 0;
 }

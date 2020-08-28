@@ -19,6 +19,11 @@
 //   Additionally, there should be an option to print the name of each struct type before the value of its members. This could be useful in code generation.
 //   For instance, printing `Vect2(1.0000f, 1.0000f)` would be useful for this case rather than `(1.0000, 1.000)`, the latter of which is the default behavior.
 
+// - Consider handling unions more in the way that format() does in Phobos (search for "#{overlap").
+// See here for some interesting discussion on detecting if a member is part of an anonymous union:
+// https://forum.dlang.org/thread/zwpctoccawmkwfoqkoyf@forum.dlang.org
+// https://forum.dlang.org/thread/trnfjzocldicdejyzhfq@forum.dlang.org
+
 // NOTE: The order of members returned by __traits(allMembers) is not guaranteed to be in the orde they appear in the struct definiation.
 // However, it SEEMS that the .tupleof property is expected (perhaps even required) to be ordered this way. This behavior is what we're relying on.
 // Should it change, we're going to have to make some changes.
@@ -213,12 +218,13 @@ if(is(Dest == FileHandle) || (isArray!Dest && is(ArrayTarget!Dest == char)))
 
         auto members = t.tupleof;
         static foreach(i, member; members)
-        {
-            static if(isCharArray!(typeof(member)) || isCString!(typeof(member))) mixin(outPolicy!`"\""`);
+        {{
+            enum surroundWithQuotes = isCharArray!(typeof(member)) || isCString!(typeof(member));
+            static if(surroundWithQuotes) mixin(outPolicy!`"\""`);
             mixin(formatPolicy!`member`);
-            static if(isCharArray!(typeof(member)) || isCString!(typeof(member))) mixin(outPolicy!`"\""`);
+            static if(surroundWithQuotes) mixin(outPolicy!`"\""`);
             static if(i < members.length - 1) mixin(outPolicy!`", "`);
-        }
+        }}
         mixin(outPolicy!`")"`);
     }
     else static if(is(T == union))
@@ -228,10 +234,13 @@ if(is(Dest == FileHandle) || (isArray!Dest && is(ArrayTarget!Dest == char)))
         {
             mixin(outPolicy!`"("`);
             static foreach(i, member; toPrintMembers)
-            {
+            {{
+                enum surroundWithQuotes = isCharArray!(typeof(member)) || isCString!(typeof(member));
+                static if(surroundWithQuotes) mixin(outPolicy!`"\""`);
                 mixin(formatPolicy!`mixin("t." ~ member.stringof)`);
+                static if(surroundWithQuotes) mixin(outPolicy!`"\""`);
                 static if (i < toPrintMembers.length - 1) mixin(outPolicy!`", "`);
-            }
+            }}
             mixin(outPolicy!`")"`);
         }
         else if (hasUDA!(T, ToPrintWhen))
@@ -243,11 +252,16 @@ if(is(Dest == FileHandle) || (isArray!Dest && is(ArrayTarget!Dest == char)))
             {
                 static foreach(i, c; uda.cases)
                 {
-                    case c: mixin(formatPolcy!`mixin("t." ~ uda.members[i]`);
-                    break tagSwitch;
+                    case c:
+                    {
+                        enum surroundWithQuotes = isCharArray!(typeof(mixin("t." ~ uda.members[i]))) || isCString!(typeof(mixin("t." ~ uda.members[i])));
+                        static if(surroundWithQuotes) mixin(outPolicy!`"\""`);
+                        mixin(formatPolicy!`mixin("t." ~ uda.members[i])`);
+                        static if(surroundWithQuotes) mixin(outPolicy!`"\""`);
+                    } break tagSwitch;
                 }
 
-                default: assert(0); break;
+                default: assert(0, "Unable to find matching @ToPrintWhen member"); break;
             }
         }
         else
