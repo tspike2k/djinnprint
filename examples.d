@@ -87,14 +87,18 @@ void formatExamples()
     float f = -32.0f;
     printOut(format(formatString, buffer, 2, msg, f));
 
+    char testChar = 'T';
+    printOut(format("We can print chars: {0}\n", buffer, testChar));
+
     char[24] charArray = "This is a char array.";
     printOut(format("char array: `{0}`\n", buffer, charArray));
 
     printOut(format("Can even print cstrings: `{0}`\n", buffer, msg.ptr));
 
     char nullMessage = '\0';
-
     printOut(format("Null string: `{0}`\n", buffer, &nullMessage));
+
+
     printOut(format("This is an {{escape character test}.\n", buffer));
 
     printOut("\n");
@@ -132,6 +136,9 @@ void printOutExamples()
     char[] msg = cast(char[])"Hello, world!";
     float f = -32.0f;
     printOut(formatString, 2, msg, f);
+
+    char testChar = 'T';
+    printOut("We can print chars: {0}\n", testChar);
 
     char[24] charArray = "This is a char array.";
     printOut("char array: `{0}`\n", charArray);
