@@ -5,34 +5,25 @@
 // TODO:
 
 // - Do not use .stringof for code generation; use __traits(identifier, var) instead. See this page for details:
-// https://dlang.org/spec/property.html#stringof
+//  https://dlang.org/spec/property.html#stringof
 
 // - Consider switching to using Ranges for output.
-
-// - Handle null string slice arguments?
-
-// - Printing characters
 
 // - Print doubles
 
 // - Testing on Windows
 
-// - Custom float/double to string conversion that doesn't rely on snprintf
+// - Better handling of structs with anonymous unions members (see format() in Phobos and search for `#{overlap`).
 
-// - Put quotes around string values when printing functions/unions
+// - Custom float/double to string conversion that doesn't rely on snprintf
 
 // - Add formatting options for variables (commas for integers, hex output, etc.)
 //   Additionally, there should be an option to print the name of each struct type before the value of its members. This could be useful in code generation.
 //   For instance, printing `Vect2(1.0000f, 1.0000f)` would be useful for this case rather than `(1.0000, 1.000)`, the latter of which is the default behavior.
 
-// - Consider handling unions more in the way that format() does in Phobos (search for "#{overlap").
-// See here for some interesting discussion on detecting if a member is part of an anonymous union:
-// https://forum.dlang.org/thread/zwpctoccawmkwfoqkoyf@forum.dlang.org
-// https://forum.dlang.org/thread/trnfjzocldicdejyzhfq@forum.dlang.org
-
-// NOTE: The order of members returned by __traits(allMembers) is not guaranteed to be in the orde they appear in the struct definiation.
+// NOTE: The order of members returned by __traits(allMembers) is not guaranteed to be in the order they appear in the struct definition.
 // However, it SEEMS that the .tupleof property is expected (perhaps even required) to be ordered this way. This behavior is what we're relying on.
-// Should it change, we're going to have to make some changes.
+// Should this break in the future, we're going to have to make some changes.
 //
 // See here for some discussions on this topic:
 // https://forum.dlang.org/thread/bug-19036-3@https.issues.dlang.org%2F
@@ -62,6 +53,11 @@ import std.traits;
 alias ArrayTarget(T : U[], U) = U;
 enum bool isCString(T) = is(T == char*) || is(T == const(char)*) || is(T == immutable(char)*);
 enum bool isCharArray(T) = isArray!T && (is(ArrayTarget!(T) == char) || is(ArrayTarget!(T) == immutable char) || is(ArrayTarget!(T) == const char));
+
+template useQuotes(T)
+{
+    enum useQuotes = isCharArray!T || isCString!T;
+}
 
 static if(use_cstdio)
 {
@@ -133,9 +129,11 @@ if(is(Dest == FileHandle) || (isArray!Dest && is(ArrayTarget!Dest == char)))
 
     static if (is(Dest == FileHandle))
     {
-        template outPolicy(string name)
+        void outPolicy(T)(in T t)
+        if(isCharArray!T)
         {
-            enum outPolicy = "printFile(dest, " ~ name ~ ");";
+            pragma(inline, true);
+            printFile(dest, t);
         }
 
         template formatPolicy(string name)
@@ -145,17 +143,17 @@ if(is(Dest == FileHandle) || (isArray!Dest && is(ArrayTarget!Dest == char)))
     }
     else
     {
-        template outPolicy(string name)
+        void outPolicy(T)(in T t)
+        if(isCharArray!T)
         {
-            enum outPolicy = "bytesWritten += safeCopy(dest[bytesWritten .. $], " ~ name ~ ", &truncated);";
+            pragma(inline, true)
+            bytesWritten += safeCopy(dest[bytesWritten .. $], t, &truncated);
         }
 
         template formatPolicy(string name)
         {
             enum formatPolicy = "bytesWritten += formatArg(" ~ name ~ ", spec, dest[bytesWritten .. $]);";
         }
-
-        auto buffer = dest[0 .. $];
     }
 
     static if (is(T == enum))
@@ -164,7 +162,7 @@ if(is(Dest == FileHandle) || (isArray!Dest && is(ArrayTarget!Dest == char)))
         {
             if (t == member)
             {
-                mixin(outPolicy!(`__traits(identifier, EnumMembers!T[i])`));
+                outPolicy(__traits(identifier, EnumMembers!T[i]));
             }
         }
     }
@@ -172,11 +170,11 @@ if(is(Dest == FileHandle) || (isArray!Dest && is(ArrayTarget!Dest == char)))
     {
         if(t)
         {
-            mixin(outPolicy!`"true"`);
+            outPolicy("true");
         }
         else
         {
-            mixin(outPolicy!`"false"`);
+            outPolicy("false");
         }
     }
     else static if (isIntegral!T)
@@ -195,7 +193,7 @@ if(is(Dest == FileHandle) || (isArray!Dest && is(ArrayTarget!Dest == char)))
     else static if (is(T == char))
     {
         char[1] temp = t;
-        mixin(outPolicy!`temp`);
+        outPolicy(temp);
     }
     else static if (is(T == float))
     {
@@ -211,51 +209,71 @@ if(is(Dest == FileHandle) || (isArray!Dest && is(ArrayTarget!Dest == char)))
         }
         else
         {
-            bytesWritten = snprintf(buffer.ptr, buffer.length, "%f", t);
+            bytesWritten = snprintf(dest.ptr, dest.length, "%f", t);
         }
     }
     else static if(isCString!T)
     {
         size_t srcLength = 0;
         while(t[srcLength] != '\0') srcLength++;
-        mixin(outPolicy!`t[0 .. srcLength]`);
+        outPolicy(t[0 .. srcLength]);
     }
     else static if(isCharArray!T)
     {
-        mixin(outPolicy!"t");
+        outPolicy(t);
     }
     else static if(is(T == struct))
     {
-        mixin(outPolicy!`"("`);
+        outPolicy("(");
 
         auto members = t.tupleof;
         static foreach(i, member; members)
         {{
             enum surroundWithQuotes = isCharArray!(typeof(member)) || isCString!(typeof(member));
-            static if(surroundWithQuotes) mixin(outPolicy!`"\""`);
+            static if(surroundWithQuotes) outPolicy("\"");
             mixin(formatPolicy!`member`);
-            static if(surroundWithQuotes) mixin(outPolicy!`"\""`);
-            static if(i < members.length - 1) mixin(outPolicy!`", "`);
+            static if(surroundWithQuotes) outPolicy("\"");
+            static if(i < members.length - 1) outPolicy(", ");
         }}
-        mixin(outPolicy!`")"`);
+        outPolicy(")");
     }
     else static if(is(T == union))
     {
-        alias toPrintMembers = getSymbolsByUDA!(T, ToPrint);
-        static if (toPrintMembers.length > 0)
+        string[] unionDefaultMembersToPrint(T)()
+        if(is(T == union))
         {
-            mixin(outPolicy!`"("`);
-            static foreach(i, member; toPrintMembers)
-            {{
-                enum surroundWithQuotes = isCharArray!(typeof(member)) || isCString!(typeof(member));
-                static if(surroundWithQuotes) mixin(outPolicy!`"\""`);
-                mixin(formatPolicy!`mixin("t." ~ member.stringof)`);
-                static if(surroundWithQuotes) mixin(outPolicy!`"\""`);
-                static if (i < toPrintMembers.length - 1) mixin(outPolicy!`", "`);
-            }}
-            mixin(outPolicy!`")"`);
+            string[] members;
+            bool skipRemaining = false;
+            static foreach(i, member; T.tupleof)
+            {
+                static if(i > 0 && T.tupleof[i-1].offsetof >= T.tupleof[i].offsetof)
+                {
+                    skipRemaining = true;
+                }
+
+                if(!skipRemaining)
+                {
+                    members ~= member.stringof;
+                }
+            }
+            return members;
         }
-        else if (hasUDA!(T, ToPrintWhen))
+
+        alias taggedToPrintMembers = getSymbolsByUDA!(T, ToPrint);
+        static if (taggedToPrintMembers.length > 0)
+        {
+            outPolicy("(");
+            static foreach(i, member; taggedToPrintMembers)
+            {{
+                enum surroundWithQuotes = useQuotes!(typeof(member));
+                static if(surroundWithQuotes) outPolicy("\"");
+                mixin(formatPolicy!`mixin("t." ~ member.stringof)`);
+                static if(surroundWithQuotes) outPolicy("\"");
+                static if (i < taggedToPrintMembers.length - 1) outPolicy(", ");
+            }}
+            outPolicy(")");
+        }
+        else static if (hasUDA!(T, ToPrintWhen))
         {
             enum uda = getUDAs!(T, ToPrintWhen)[0];
             static assert(uda.cases.length == uda.members.length);
@@ -266,10 +284,10 @@ if(is(Dest == FileHandle) || (isArray!Dest && is(ArrayTarget!Dest == char)))
                 {
                     case c:
                     {
-                        enum surroundWithQuotes = isCharArray!(typeof(mixin("t." ~ uda.members[i]))) || isCString!(typeof(mixin("t." ~ uda.members[i])));
-                        static if(surroundWithQuotes) mixin(outPolicy!`"\""`);
+                        enum surroundWithQuotes = useQuotes!(typeof(mixin("t." ~ uda.members[i])));
+                        static if(surroundWithQuotes) outPolicy("\"");
                         mixin(formatPolicy!`mixin("t." ~ uda.members[i])`);
-                        static if(surroundWithQuotes) mixin(outPolicy!`"\""`);
+                        static if(surroundWithQuotes) outPolicy("\"");
                     } break tagSwitch;
                 }
 
@@ -278,30 +296,33 @@ if(is(Dest == FileHandle) || (isArray!Dest && is(ArrayTarget!Dest == char)))
         }
         else
         {
-            static if(assertOnUnhandledUnion)
-            {
-                pragma(msg, "ERR: Unhandled union " ~ T.stringof ~ ". No @toPrint UDA found.");
-                static assert(0);
-            }
-
-            mixin(outPolicy!`"union "`);
-            mixin(outPolicy!`T.stringof`);
+            outPolicy("(");
+            enum membersToPrint = unionDefaultMembersToPrint!T;
+            static foreach(i, memberName; membersToPrint)
+            {{
+                enum surroundWithQuotes = useQuotes!(typeof(mixin("t." ~ memberName)));
+                static if(surroundWithQuotes) outPolicy("\"");
+                mixin(formatPolicy!`mixin("t." ~ memberName)`);
+                static if(surroundWithQuotes) outPolicy("\"");
+                static if (i < membersToPrint.length - 1) outPolicy(", ");
+            }}
+            outPolicy(")");
         }
     }
     else static if(isArray!T)
     {
-        mixin(outPolicy!`"["`);
+        outPolicy("[");
 
         foreach(i; 0 .. t.length)
         {
             mixin(formatPolicy!`t[i]`);
             if (i < t.length - 1)
             {
-                mixin(outPolicy!`", "`);
+                outPolicy(", ");
             }
         }
 
-        mixin(outPolicy!`"]"`);
+        outPolicy("]");
     }
     else static if (isPointer!T)
     {
@@ -313,7 +334,7 @@ if(is(Dest == FileHandle) || (isArray!Dest && is(ArrayTarget!Dest == char)))
         }
         else
         {
-            bytesWritten = intToString(buffer, cast(size_t)t, 16, spec);
+            bytesWritten = intToString(dest, cast(size_t)t, 16, spec);
         }
     }
     else
@@ -441,8 +462,6 @@ if(isIntegral!T)
     return minToCopy;
 }
 
-public:
-
 enum printCommon = `
     size_t fmtCursor = 0;
     size_t fmtCopyToBufferIndex = 0;
@@ -508,6 +527,8 @@ enum printCommon = `
 
     mixin(outputPolicy);
 `;
+
+public:
 
 char[] format(T, Args...)(T fmt, char[] buffer, Args args)
 if(isCharArray!T)

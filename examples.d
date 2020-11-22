@@ -98,7 +98,6 @@ void formatExamples()
     char nullMessage = '\0';
     printOut(format("Null string: `{0}`\n", buffer, &nullMessage));
 
-
     printOut(format("This is an {{escape character test}.\n", buffer));
 
     printOut("\n");
@@ -257,7 +256,7 @@ void unionExamples()
 
     AnonUnion an;
     an.type = AnonUnionType.ID;
-    an.name = cast(char[])"Anon union name";
+    an.name = cast(char[])"Anon union name"; // TODO: For some odd reason, trying to print this under GDC will output garbage. This needs to be fixed.
     printOut("{0}\n", an);
 }
 
