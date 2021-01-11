@@ -4,12 +4,8 @@
 
 // TODO:
 
-// - Do not use .stringof for code generation; use __traits(identifier, var) instead. See this page for details:
+// - Do not use .stringof for code generation? use __traits(identifier, var) instead. See this page for details:
 //  https://dlang.org/spec/property.html#stringof
-
-// - Consider switching to using Ranges for output.
-
-// - Print doubles
 
 // - Testing on Windows
 
@@ -20,6 +16,8 @@
 // - Add formatting options for variables (commas for integers, hex output, etc.)
 //   Additionally, there should be an option to print the name of each struct type before the value of its members. This could be useful in code generation.
 //   For instance, printing `Vect2(1.0000f, 1.0000f)` would be useful for this case rather than `(1.0000, 1.000)`, the latter of which is the default behavior.
+
+// - Consider switching to using Ranges for buffer formatting functions.
 
 // NOTE: The order of members returned by __traits(allMembers) is not guaranteed to be in the order they appear in the struct definition.
 // However, it SEEMS that the .tupleof property is expected (perhaps even required) to be ordered this way. This behavior is what we're relying on.
@@ -45,7 +43,6 @@ private @nogc nothrow:
 
 // Library configuration options:
 enum assertOnTruncation     = false; // Trigger an assertion when formatting to a buffer results in a string larger than the buffer size
-enum assertOnUnhandledUnion = false; // Assert when a union without ToPrint or ToPrintWhen UDAs is found while formatting.
 enum use_cstdio             = true; // Use the standard C library output functions when printing to the console
 
 import std.traits;
@@ -179,23 +176,16 @@ if(is(Dest == FileHandle) || (isArray!Dest && is(ArrayTarget!Dest == char)))
     }
     else static if (isIntegral!T)
     {
-        static if(is(Dest == FileHandle))
-        {
-            char[30] buffer;
-            auto length = intToString(buffer, t, 10, spec);
-            printFile(dest, buffer[0 .. length]);
-        }
-        else
-        {
-            bytesWritten += intToString(dest, t, 10, spec);
-        }
+        char[30] intBuffer;
+        auto result = intToString(intBuffer, t, 10, spec);
+        outPolicy(result);
     }
     else static if (is(T == char))
     {
         char[1] temp = t;
         outPolicy(temp);
     }
-    else static if (is(T == float))
+    else static if (is(T == float) || is(T == double))
     {
         // TODO: Eleminate our dependence on snprintf and use our own float formatting functions. Look to stb_sprintf?
         // Note that even Phobos (the D standard library) used snprintf to format floats.
@@ -326,16 +316,9 @@ if(is(Dest == FileHandle) || (isArray!Dest && is(ArrayTarget!Dest == char)))
     }
     else static if (isPointer!T)
     {
-        static if(is(Dest == FileHandle))
-        {
-            char[30] buffer;
-            auto length = intToString(buffer, cast(size_t)t, 16, spec);
-            printFile(dest, buffer[0 .. length]);
-        }
-        else
-        {
-            bytesWritten = intToString(dest, cast(size_t)t, 16, spec);
-        }
+        char[30] intBuffer;
+        auto result = intToString(intBuffer, cast(size_t)t, 16, spec);
+        outPolicy(result);
     }
     else
     {
@@ -404,7 +387,7 @@ if (isCharArray!T)
     return bytesToCopy;
 }
 
-size_t intToString(T)(char[] buffer, T t, ubyte base, FormatSpec spec)
+char[] intToString(T)(ref char[30] buffer, T t, ubyte base, FormatSpec spec)
 if(isIntegral!T)
 {
     static if (isSigned!T)
@@ -414,12 +397,11 @@ if(isIntegral!T)
         t = abs(t); // NOTE: Strip off the sign to prevent the mod operator from giving us a negative array index.
     }
 
-    char[30] conversion; // NOTE: This should be plenty large enough to hold even the maximum value of a ulong.
-    size_t finish = conversion.length;
+    size_t finish = buffer.length;
 
     foreach_reverse(place; 0..finish)
     {
-        conversion[place] = intToCharTable[t % base];
+        buffer[place] = intToCharTable[t % base];
         t /= base;
 
         // TODO: Add commas in the conversion string?
@@ -431,14 +413,14 @@ if(isIntegral!T)
                 if (sign < 0 && place > 0)
                 {
                     place--;
-                    conversion[place] = '-';
+                    buffer[place] = '-';
                 }
             }
 
             if(base == 16 && place >= 2)
             {
-                conversion[--place] = 'x';
-                conversion[--place] = '0';
+                buffer[--place] = 'x';
+                buffer[--place] = '0';
             }
 
             finish = place;
@@ -446,7 +428,7 @@ if(isIntegral!T)
         }
     }
 
-    size_t charsWritten = conversion.length - finish;
+    size_t charsWritten = buffer.length - finish;
     size_t minToCopy = void;
     if(charsWritten < buffer.length)
     {
@@ -458,8 +440,7 @@ if(isIntegral!T)
         minToCopy = buffer.length;
     }
 
-    buffer[0..minToCopy] = conversion[finish..finish+minToCopy];
-    return minToCopy;
+    return buffer[finish..finish+minToCopy];
 }
 
 enum printCommon = `
@@ -630,7 +611,7 @@ if(isCharArray!T)
     }
 }
 
-version(none):
+private:
 
 ////
 //
@@ -641,39 +622,223 @@ version(none):
 //
 ////
 
+char[] formatDouble(ref char[512] buffer, double t)
+{
+    //char const *h;
+    stbsp__uint32 l, n, cs;
+    //stbsp__uint64 n64;
+    //double fv;
+    
+    //char *sn;
+
+    stbsp__int32 decimalPos = void; // dp
+    stbsp__uint32 length = void;
+    auto destPtr = buffer.ptr;
+
+    char[8] tail = 0;
+    char[8] lead = 0;
+    char* s;
+    stbsp__uint32 fl;
+
+    // TODO: The above seems to work, I think... But we need to do a lot of post-processing to
+    // finish the conversion. See vsprintfcb (particularly the "case 'f':" section) to see
+    // retrieve how this is done.
+
+    stbsp__int32 pr = 6; // default is 6
+    // read the double into a string
+    if (stbsp__real_to_str(&destPtr, &length, destPtr, &decimalPos, t, pr))
+        fl |= STBSP__NEGATIVE;
+    stbsp__lead_sign(fl, lead.ptr);
+/+
+    if (decimalPos == STBSP__SPECIAL) {
+        s = cast(char *)destPtr;
+        cs = 0;
+        pr = 0;
+        goto scopy;
+    }
+    s = num + 64;
+
+         // handle the three decimal varieties
+         if (dp <= 0) {
+            stbsp__int32 i;
+            // handle 0.000*000xxxx
+            *s++ = '0';
+            if (pr)
+               *s++ = stbsp__period;
+            n = -dp;
+            if ((stbsp__int32)n > pr)
+               n = pr;
+            i = n;
+            while (i) {
+               if ((((stbsp__uintptr)s) & 3) == 0)
+                  break;
+               *s++ = '0';
+               --i;
+            }
+            while (i >= 4) {
+               *(stbsp__uint32 *)s = 0x30303030;
+               s += 4;
+               i -= 4;
+            }
+            while (i) {
+               *s++ = '0';
+               --i;
+            }
+            if ((stbsp__int32)(l + n) > pr)
+               l = pr - n;
+            i = l;
+            while (i) {
+               *s++ = *sn++;
+               --i;
+            }
+            tz = pr - (n + l);
+            cs = 1 + (3 << 24); // how many tens did we write (for commas below)
+         } else {
+            cs = (fl & STBSP__TRIPLET_COMMA) ? ((600 - (stbsp__uint32)dp) % 3) : 0;
+            if ((stbsp__uint32)dp >= l) {
+               // handle xxxx000*000.0
+               n = 0;
+               for (;;) {
+                  if ((fl & STBSP__TRIPLET_COMMA) && (++cs == 4)) {
+                     cs = 0;
+                     *s++ = stbsp__comma;
+                  } else {
+                     *s++ = sn[n];
+                     ++n;
+                     if (n >= l)
+                        break;
+                  }
+               }
+               if (n < (stbsp__uint32)dp) {
+                  n = dp - n;
+                  if ((fl & STBSP__TRIPLET_COMMA) == 0) {
+                     while (n) {
+                        if ((((stbsp__uintptr)s) & 3) == 0)
+                           break;
+                        *s++ = '0';
+                        --n;
+                     }
+                     while (n >= 4) {
+                        *(stbsp__uint32 *)s = 0x30303030;
+                        s += 4;
+                        n -= 4;
+                     }
+                  }
+                  while (n) {
+                     if ((fl & STBSP__TRIPLET_COMMA) && (++cs == 4)) {
+                        cs = 0;
+                        *s++ = stbsp__comma;
+                     } else {
+                        *s++ = '0';
+                        --n;
+                     }
+                  }
+               }
+               cs = (int)(s - (num + 64)) + (3 << 24); // cs is how many tens
+               if (pr) {
+                  *s++ = stbsp__period;
+                  tz = pr;
+               }
+            } else {
+               // handle xxxxx.xxxx000*000
+               n = 0;
+               for (;;) {
+                  if ((fl & STBSP__TRIPLET_COMMA) && (++cs == 4)) {
+                     cs = 0;
+                     *s++ = stbsp__comma;
+                  } else {
+                     *s++ = sn[n];
+                     ++n;
+                     if (n >= (stbsp__uint32)dp)
+                        break;
+                  }
+               }
+               cs = (int)(s - (num + 64)) + (3 << 24); // cs is how many tens
+               if (pr)
+                  *s++ = stbsp__period;
+               if ((l - dp) > (stbsp__uint32)pr)
+                  l = pr + dp;
+               while (n < l) {
+                  *s++ = sn[n];
+                  ++n;
+               }
+               tz = pr - (l - dp);
+            }
+         }
+         pr = 0;
+
+      flt_lead:
+         // get the length that we copied
+         l = (stbsp__uint32)(s - (num + 64));
+         s = num + 64;
+         goto scopy;
+#endif
++/
+    return buffer;
+}
+
+void stbsp__lead_sign(stbsp__uint32 fl, char *sign)
+{
+   sign[0] = 0;
+   if (fl & STBSP__NEGATIVE) {
+      sign[0] = 1;
+      sign[1] = '-';
+   } else if (fl & STBSP__LEADINGSPACE) {
+      sign[0] = 1;
+      sign[1] = ' ';
+   } else if (fl & STBSP__LEADINGPLUS) {
+      sign[0] = 1;
+      sign[1] = '+';
+   }
+}
+
 alias stbsp__uint16 = ushort;
 alias stbsp__int32 = int;
 alias stbsp__uint32 = uint;
 alias stbsp__int64 = long;
 alias stbsp__uint64 = ulong;
+
+enum STBSP__LEFTJUST = 1;
+enum STBSP__LEADINGPLUS = 2;
+enum STBSP__LEADINGSPACE = 4;
+enum STBSP__LEADING_0X = 8;
+enum STBSP__LEADINGZERO = 16;
+enum STBSP__INTMAX = 32;
+enum STBSP__TRIPLET_COMMA = 64;
+enum STBSP__NEGATIVE = 128;
+enum STBSP__METRIC_SUFFIX = 256;
+enum STBSP__HALFWIDTH = 512;
+enum STBSP__METRIC_NOSPACE = 1024;
+enum STBSP__METRIC_1024 = 2048;
+enum STBSP__METRIC_JEDEC = 4096;
 enum STBSP__SPECIAL = 0x7000;
 
-enum double[23] stbsp__bot = [
+immutable double[23] stbsp__bot = [
    1e+000, 1e+001, 1e+002, 1e+003, 1e+004, 1e+005, 1e+006, 1e+007, 1e+008, 1e+009, 1e+010, 1e+011,
    1e+012, 1e+013, 1e+014, 1e+015, 1e+016, 1e+017, 1e+018, 1e+019, 1e+020, 1e+021, 1e+022
 ];
 
-enum double[22] stbsp__negbot = [
+immutable double[22] stbsp__negbot = [
    1e-001, 1e-002, 1e-003, 1e-004, 1e-005, 1e-006, 1e-007, 1e-008, 1e-009, 1e-010, 1e-011,
    1e-012, 1e-013, 1e-014, 1e-015, 1e-016, 1e-017, 1e-018, 1e-019, 1e-020, 1e-021, 1e-022
 ];
 
-enum double[22] stbsp__negboterr = [
+immutable double[22] stbsp__negboterr = [
    -5.551115123125783e-018,  -2.0816681711721684e-019, -2.0816681711721686e-020, -4.7921736023859299e-021, -8.1803053914031305e-022, 4.5251888174113741e-023,
    4.5251888174113739e-024,  -2.0922560830128471e-025, -6.2281591457779853e-026, -3.6432197315497743e-027, 6.0503030718060191e-028,  2.0113352370744385e-029,
    -3.0373745563400371e-030, 1.1806906454401013e-032,  -7.7705399876661076e-032, 2.0902213275965398e-033,  -7.1542424054621921e-034, -7.1542424054621926e-035,
    2.4754073164739869e-036,  5.4846728545790429e-037,  9.2462547772103625e-038,  -4.8596774326570872e-039
 ];
 
-enum double[13] stbsp__top = [
+immutable double[13] stbsp__top = [
    1e+023, 1e+046, 1e+069, 1e+092, 1e+115, 1e+138, 1e+161, 1e+184, 1e+207, 1e+230, 1e+253, 1e+276, 1e+299
 ];
 
-enum double[13] stbsp__negtop = [
+immutable double[13] stbsp__negtop = [
    1e-023, 1e-046, 1e-069, 1e-092, 1e-115, 1e-138, 1e-161, 1e-184, 1e-207, 1e-230, 1e-253, 1e-276, 1e-299
 ];
 
-enum double[13] stbsp__toperr = [
+immutable double[13] stbsp__toperr = [
    8388608,
    6.8601809640529717e+028,
    -7.253143638152921e+052,
@@ -689,14 +854,14 @@ enum double[13] stbsp__toperr = [
    -5.2504760255204387e+282
 ];
 
-enum double[13] stbsp__negtoperr = [
+immutable double[13] stbsp__negtoperr = [
    3.9565301985100693e-040,  -2.299904345391321e-063,  3.6506201437945798e-086,  1.1875228833981544e-109,
    -5.0644902316928607e-132, -6.7156837247865426e-155, -2.812077463003139e-178,  -5.7778912386589953e-201,
    7.4997100559334532e-224,  -4.6439668915134491e-247, -6.3691100762962136e-270, -9.436808465446358e-293,
    8.0970921678014997e-317L
 ];
 
-enum stbsp__uint64[20] stbsp__powten = [
+immutable stbsp__uint64[20] stbsp__powten = [
    1,
    10,
    100,
@@ -805,10 +970,10 @@ void STBSP__COPYFP(T, U)(ref T dest, in U src)
     pragma(inline, true);
     int cn = void;
     for(cn = 0; cn < 8; cn++)
-        (cast(char*)&dest)[cn] = (cast(char *)&src)[cn];
+        (cast(char*)&dest)[cn] = (cast(char*)&src)[cn];
 }
 
-void stbsp__ddmulthi(T)(ref T oh, ref T ol, ref T xh, ref T yh)
+void stbsp__ddmulthi(T)(ref T oh, ref T ol, ref T xh, const ref T yh)
 {
     pragma(inline, true);
     double ahi = 0, alo, bhi = 0, blo;
@@ -825,19 +990,19 @@ void stbsp__ddmulthi(T)(ref T oh, ref T ol, ref T xh, ref T yh)
     ol = ((ahi * bhi - oh) + ahi * blo + alo * bhi) + alo * blo;
 }
 
-void stbsp__ddmultlo(T)(ref T oh, ref T ol, ref T xh, ref T xl, ref T yh, ref T yl)
+void stbsp__ddmultlo(T)(ref T oh, ref T ol, ref T xh, ref T xl, const ref T yh, const ref T yl)
 {
     pragma(inline, true);
     ol = ol + (xh * yl + xl * yh);
 }
 
-void stbsp__ddmultlos(T)(ref T oh, ref T ol, ref T xh, ref T yl)
+void stbsp__ddmultlos(T)(ref T oh, ref T ol, const ref T xh, const ref T yl)
 {
     pragma(inline, true);
     ol = ol + (xh * yl);
 }
 
-void stbsp__ddtoS64(T, U)(ref T ob, ref U xh, ref U xl)
+void stbsp__ddtoS64(T, U)(ref T ob, const ref U xh, const ref U xl)
 {
     pragma(inline, true);
     double ahi = 0, alo, vh, t;
@@ -871,7 +1036,7 @@ stbsp__int32 stbsp__real_to_str(char** start, stbsp__uint32* len, char* outp, st
    d = value;
    STBSP__COPYFP(bits, d);
    expo = cast(stbsp__int32)((bits >> 52) & 2047);
-   ng = cast(stbsp__int32)(cast(stbsp__uint64) bits >> 63);
+   ng = cast(stbsp__int32)(cast(stbsp__uint64)bits >> 63);
    if (ng)
       d = -d;
 
