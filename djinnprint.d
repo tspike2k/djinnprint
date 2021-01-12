@@ -9,7 +9,7 @@
 
 // - Testing on Windows
 
-// - Better handling of structs with anonymous unions members (see format() in Phobos and search for `#{overlap`).
+// - Better handling of structs with anonymous union members (see format() in Phobos and search for `#{overlap`).
 
 // - Custom float/double to string conversion that doesn't rely on snprintf
 
@@ -122,7 +122,20 @@ if(is(Dest == FileHandle) || (isArray!Dest && is(ArrayTarget!Dest == char)))
 {
     // NOTE: The return value of formatArg is meaningless when dest is a FileHandle.
     ulong bytesWritten = 0;
-    bool truncated = false;
+    
+    size_t getHighestOffset(T, size_t memberCutoffIndex)()
+    if(is(T == struct))
+    {
+        size_t result = 0;
+        static foreach(i, member; T.tupleof)
+        {
+            static if(i < memberCutoffIndex)
+            {
+                result = result < T.tupleof[i].offsetof ? T.tupleof[i].offsetof : result;            
+            }
+        }
+        return result;
+    }
 
     static if (is(Dest == FileHandle))
     {
@@ -144,7 +157,7 @@ if(is(Dest == FileHandle) || (isArray!Dest && is(ArrayTarget!Dest == char)))
         if(isCharArray!T)
         {
             pragma(inline, true)
-            bytesWritten += safeCopy(dest[bytesWritten .. $], t, &truncated);
+            bytesWritten += safeCopy(dest[bytesWritten .. $], t);
         }
 
         template formatPolicy(string name)
@@ -210,7 +223,16 @@ if(is(Dest == FileHandle) || (isArray!Dest && is(ArrayTarget!Dest == char)))
     }
     else static if(isCharArray!T)
     {
-        outPolicy(t);
+        size_t endIndex = t.length;
+        foreach(i; 0 .. t.length)
+        {
+            if(t[i] == '\0')
+            {
+                endIndex = i; 
+                break;
+            }
+        }
+        outPolicy(t[0 .. endIndex]);
     }
     else static if(is(T == struct))
     {
@@ -219,11 +241,15 @@ if(is(Dest == FileHandle) || (isArray!Dest && is(ArrayTarget!Dest == char)))
         auto members = t.tupleof;
         static foreach(i, member; members)
         {{
-            enum surroundWithQuotes = isCharArray!(typeof(member)) || isCString!(typeof(member));
-            static if(surroundWithQuotes) outPolicy("\"");
-            mixin(formatPolicy!`member`);
-            static if(surroundWithQuotes) outPolicy("\"");
-            static if(i < members.length - 1) outPolicy(", ");
+            //enum highestOffset = getHighestOffset!(T, i);
+            //static if(highestOffset == 0 || t.tupleof[i].offsetof > highestOffset)
+            {
+                enum surroundWithQuotes = isCharArray!(typeof(member)) || isCString!(typeof(member));
+                static if(surroundWithQuotes) outPolicy("\"");
+                mixin(formatPolicy!`member`);
+                static if(surroundWithQuotes) outPolicy("\"");
+                static if(i < members.length - 1) outPolicy(", ");                
+            }
         }}
         outPolicy(")");
     }
@@ -368,20 +394,23 @@ FormatSpec getFormatSpec(in char[] command)
     return result;
 }
 
-size_t safeCopy(T)(char[] dest, T source, bool* truncated)
+size_t safeCopy(T)(char[] dest, T source)
 if (isCharArray!T)
 {
     size_t bytesToCopy = void;
-
+    bool truncated = false;
+    
     if(dest.length < source.length)
     {
         bytesToCopy = dest.length;
-        *truncated = true;
+        truncated = true;
     }
     else
     {
         bytesToCopy = source.length;
     }
+    
+    static if (assertOnTruncation) assert(!truncated);
 
     dest[0 .. bytesToCopy] = source[0 .. bytesToCopy];
     return bytesToCopy;
@@ -515,9 +544,8 @@ char[] format(T, Args...)(T fmt, char[] buffer, Args args)
 if(isCharArray!T)
 {
     size_t bufferWritten = 0;
-    bool truncated = false;
 
-    enum outputPolicy = `bufferWritten += safeCopy(buffer[bufferWritten..buffer.length], fmt[fmtCopyToBufferIndex .. fmtCursor], &truncated);`;
+    enum outputPolicy = `bufferWritten += safeCopy(buffer[bufferWritten..buffer.length], fmt[fmtCopyToBufferIndex .. fmtCursor]);`;
     enum formatPolicy = `bufferWritten += formatArg(args[i], formatSpec, buffer[bufferWritten .. buffer.length]);`;
 
     mixin(printCommon);
@@ -525,9 +553,7 @@ if(isCharArray!T)
     size_t zeroIndex = bufferWritten < buffer.length ? bufferWritten : buffer.length - 1;
     buffer[zeroIndex] = '\0';
 
-    static if(assertOnTruncation) assert(!truncated);
-
-    return buffer[0..bufferWritten];
+    return buffer[0..zeroIndex];
 }
 
 void printOut(T, Args...)(T fmt, Args args)
@@ -622,7 +648,7 @@ private:
 //
 ////
 
-char[] formatDouble(ref char[512] buffer, double t)
+char[] formatDouble(return ref char[512] buffer, double t)
 {
     //char const *h;
     stbsp__uint32 l, n, cs;

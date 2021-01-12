@@ -90,7 +90,7 @@ void formatExamples()
     char testChar = 'T';
     printOut(format("We can print chars: {0}\n", buffer, testChar));
 
-    char[24] charArray = "This is a char array.";
+    char[21] charArray = "This is a char array.";
     printOut(format("char array: `{0}`\n", buffer, charArray));
 
     printOut(format("Can even print cstrings: `{0}`\n", buffer, msg.ptr));
@@ -139,7 +139,7 @@ void printOutExamples()
     char testChar = 'T';
     printOut("We can print chars: {0}\n", testChar);
 
-    char[24] charArray = "This is a char array.";
+    char[21] charArray = "This is a char array.";
     printOut("char array: `{0}`\n", charArray);
 
     printOut("Can even print cstrings: `{0}`\n", msg.ptr);
