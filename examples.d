@@ -67,7 +67,7 @@ struct TestStruct
 
 union Vect2
 {
-    @ToPrint struct {float x = 0.0f, y = 0.0f;};
+    struct {float x = 0.0f, y = 0.0f;};
     struct {float u, v;};
     float[2] c;
 }
@@ -230,6 +230,8 @@ struct AnonUnion
         char[512] name;
         int id;
     };
+    
+    double t;
 }
 
 void unionExamples()
@@ -254,10 +256,11 @@ void unionExamples()
     printOut("{0}\n", player);
     printOut(format("{0}\n", buffer, door));
 
-    AnonUnion an;
-    an.type = AnonUnionType.ID;
-    an.name = cast(char[])"Anon union name"; // TODO: For some odd reason, trying to print this under GDC will output garbage. This needs to be fixed.
-    printOut("{0}\n", an);
+    AnonUnion au;
+    au.type = AnonUnionType.ID;
+    au.name = cast(char[])"Anon union name"; // TODO: For some odd reason, trying to print this under GDC will output garbage. This needs to be fixed.
+    au.t = 16.32;
+    printOut("{0}\n", au);
 }
 
 extern(C) int main()

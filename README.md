@@ -62,13 +62,13 @@ Much like the format() function, these functions take a format string as the fir
 
 For convenience, alternate versions of printOut() and printErr() are provided that simply take a string and send it to the standard output or standard error streams, respectively. This is especially useful for quickly logging the result of the format() function.
 
-### Formatting named unions (experimental)
-
-__Please note this section refers specifically to named unions; none of the information below applies to anonymous unions.__
+### Formatting unions (experimental)
 
 Unions are an odd case. As union members share the same memory layout, to format each member is redundant. Even worse, under some conditions certain members will be in an invalid state. This could be mitigated by asking the user to supply a toString() method with every union they wish to format. But the union itself shouldn't need to know *how* to format its members. After all, that's the responsibility of this library. Rather the responsibility of the union should be to tell the library which members should be formatted and under what conditions.
 
 By default, only the first member of a union is formatted. If another union member should be formatted instead it can be marked with the @ToPrint UDA. In the case of tagged/discriminated unions, it makes sense to print out a specific union member based on how the union is tagged. This can be done by using the @ToPrintWhen UDA. This is currently slightly cumbersome to use. See the examples.d file for a demonstration of how to apply this UDA to a tagged/discriminated union.
+
+Anonymous unions are a bit trickier. D doesn't provide introspection features for detecting if struct members are part of an anonymous union beyond testing the byte offset of each member. In Phobos, std.format handles anonymous unions by marking members sharing the same memory with __#{overlap ...}__ (see std.format.formatValueImpl() for details). For now, the library simply prints the first member of the anonymous union; the @ToPrint and @ToPrintWhen UDAs currently do not work with anonymous unions.
 
 ### Initializing djinnprint
 

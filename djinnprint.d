@@ -241,14 +241,15 @@ if(is(Dest == FileHandle) || (isArray!Dest && is(ArrayTarget!Dest == char)))
         auto members = t.tupleof;
         static foreach(i, member; members)
         {{
-            //enum highestOffset = getHighestOffset!(T, i);
-            //static if(highestOffset == 0 || t.tupleof[i].offsetof > highestOffset)
+            enum highestOffset = getHighestOffset!(T, i);
+            static if(highestOffset == 0 || t.tupleof[i].offsetof > highestOffset)
             {
+                static if(i > 0) outPolicy(", ");
+                
                 enum surroundWithQuotes = isCharArray!(typeof(member)) || isCString!(typeof(member));
                 static if(surroundWithQuotes) outPolicy("\"");
                 mixin(formatPolicy!`member`);
                 static if(surroundWithQuotes) outPolicy("\"");
-                static if(i < members.length - 1) outPolicy(", ");                
             }
         }}
         outPolicy(")");
