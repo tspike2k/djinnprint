@@ -4,9 +4,6 @@
 
 // TODO:
 
-// - Do not use .stringof for code generation? use __traits(identifier, var) instead. See this page for details:
-//  https://dlang.org/spec/property.html#stringof
-
 // - Testing on Windows
 
 // - Better handling of structs with anonymous union members (see format() in Phobos and search for `#{overlap`).
@@ -17,7 +14,7 @@
 //   Additionally, there should be an option to print the name of each struct type before the value of its members. This could be useful in code generation.
 //   For instance, printing `Vect2(1.0000f, 1.0000f)` would be useful for this case rather than `(1.0000, 1.000)`, the latter of which is the default behavior.
 
-// - Consider switching to using Ranges for buffer formatting functions.
+// - Add support for Ranges (both printing them out and formatting into them).
 
 // NOTE: The order of members returned by __traits(allMembers) is not guaranteed to be in the order they appear in the struct definition.
 // However, it SEEMS that the .tupleof property is expected (perhaps even required) to be ordered this way. This behavior is what we're relying on.
@@ -124,7 +121,7 @@ if(is(Dest == FileHandle) || (isArray!Dest && is(ArrayTarget!Dest == char)))
     ulong bytesWritten = 0;
     
     size_t getHighestOffset(T, size_t memberCutoffIndex)()
-    if(is(T == struct))
+    if(is(T == struct) || is(T == union))
     {
         size_t result = 0;
         static foreach(i, member; T.tupleof)
@@ -246,7 +243,7 @@ if(is(Dest == FileHandle) || (isArray!Dest && is(ArrayTarget!Dest == char)))
             {
                 static if(i > 0) outPolicy(", ");
                 
-                enum surroundWithQuotes = isCharArray!(typeof(member)) || isCString!(typeof(member));
+                enum surroundWithQuotes = useQuotes!(typeof(member));
                 static if(surroundWithQuotes) outPolicy("\"");
                 mixin(formatPolicy!`member`);
                 static if(surroundWithQuotes) outPolicy("\"");
@@ -256,26 +253,6 @@ if(is(Dest == FileHandle) || (isArray!Dest && is(ArrayTarget!Dest == char)))
     }
     else static if(is(T == union))
     {
-        string[] unionDefaultMembersToPrint(T)()
-        if(is(T == union))
-        {
-            string[] members;
-            bool skipRemaining = false;
-            static foreach(i, member; T.tupleof)
-            {
-                static if(i > 0 && T.tupleof[i-1].offsetof >= T.tupleof[i].offsetof)
-                {
-                    skipRemaining = true;
-                }
-
-                if(!skipRemaining)
-                {
-                    members ~= member.stringof;
-                }
-            }
-            return members;
-        }
-
         alias taggedToPrintMembers = getSymbolsByUDA!(T, ToPrint);
         static if (taggedToPrintMembers.length > 0)
         {
@@ -284,7 +261,7 @@ if(is(Dest == FileHandle) || (isArray!Dest && is(ArrayTarget!Dest == char)))
             {{
                 enum surroundWithQuotes = useQuotes!(typeof(member));
                 static if(surroundWithQuotes) outPolicy("\"");
-                mixin(formatPolicy!`mixin("t." ~ member.stringof)`);
+                mixin(formatPolicy!`t.tupleof[i]`);
                 static if(surroundWithQuotes) outPolicy("\"");
                 static if (i < taggedToPrintMembers.length - 1) outPolicy(", ");
             }}
@@ -314,14 +291,18 @@ if(is(Dest == FileHandle) || (isArray!Dest && is(ArrayTarget!Dest == char)))
         else
         {
             outPolicy("(");
-            enum membersToPrint = unionDefaultMembersToPrint!T;
-            static foreach(i, memberName; membersToPrint)
+            static foreach(i, member; T.tupleof)
             {{
-                enum surroundWithQuotes = useQuotes!(typeof(mixin("t." ~ memberName)));
-                static if(surroundWithQuotes) outPolicy("\"");
-                mixin(formatPolicy!`mixin("t." ~ memberName)`);
-                static if(surroundWithQuotes) outPolicy("\"");
-                static if (i < membersToPrint.length - 1) outPolicy(", ");
+                enum highestOffset = getHighestOffset!(T, i);
+                static if(highestOffset == 0 || t.tupleof[i].offsetof > highestOffset)
+                {
+                    static if(i > 0) outPolicy(", ");
+                    
+                    enum surroundWithQuotes = useQuotes!(typeof(member));
+                    static if(surroundWithQuotes) outPolicy("\"");
+                    mixin(formatPolicy!`t.tupleof[i]`);
+                    static if(surroundWithQuotes) outPolicy("\"");
+                }
             }}
             outPolicy(")");
         }
