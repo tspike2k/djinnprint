@@ -56,11 +56,13 @@ Note that formatting options are planned but not currently implemented.
 
 The format function is used to format arguments into a fixed size buffer, similar to the snprintf function in C. The format string is passed as the first argument. The function then takes the buffer followed by variadic arguments. The format string is copied into the buffer with each format specifier replaced by the textual representation of a given argument's value. To ensure compatibility with C the end of the resulting string is null terminated. Even if the resulting string is too long to fit in the buffer and is truncated, the last element of the buffer will be set to the null terminator. A slice containing how much text was written into the buffer is returned.
 
+### formatOut(), formatErr()
+
+Much like the format() function, these functions take a format string as the first argument. The format string is copied to an output stream with each format specifier replaced by the textual representation of a given argument's value. The result of formatOut is sent to the standard output stream while the result of formatErr is sent to the standard error stream.
+
 ### printOut(), printErr()
 
-Much like the format() function, these functions take a format string as the first argument. The format string is copied to an output stream with each format specifier replaced by the textual representation of a given argument's value. The result of printOut is sent to the standard output stream while the result of printErr is sent to the standard error stream.
-
-For convenience, alternate versions of printOut() and printErr() are provided that simply take a string and send it to the standard output or standard error streams, respectively. This is especially useful for quickly logging the result of the format() function.
+For convenience, printOut() and printErr() are provided to simply take a string and send it to the standard output or standard error streams, respectively. This is especially useful for quickly logging the result of the format() function.
 
 ### Formatting unions (experimental)
 

@@ -23,7 +23,6 @@
 // https://forum.dlang.org/thread/odpdhayvxaglheqcntwj@forum.dlang.org
 // https://forum.dlang.org/post/stvphdwgugrlcgfkbyxc@forum.dlang.org
 
-
 module djinnprint;
 
 enum ToPrint;
