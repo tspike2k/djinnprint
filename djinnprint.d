@@ -8,8 +8,6 @@
 
 // - Better handling of structs with anonymous union members (see format() in Phobos and search for `#{overlap`).
 
-// - Custom float/double to string conversion that doesn't rely on snprintf
-
 // - Add formatting options for variables (commas for integers, hex output, padding, etc.)
 //   Additionally, there should be an option to print the name of each struct type before the value of its members. This could be useful in code generation.
 //   For instance, printing `Vect2(1.0000f, 1.0000f)` would be useful for this case rather than `(1.0000, 1.000)`, the latter of which is the default behavior.
@@ -24,6 +22,7 @@
 // https://forum.dlang.org/thread/bug-19036-3@https.issues.dlang.org%2F
 // https://forum.dlang.org/thread/odpdhayvxaglheqcntwj@forum.dlang.org
 // https://forum.dlang.org/post/stvphdwgugrlcgfkbyxc@forum.dlang.org
+
 
 module djinnprint;
 
@@ -43,6 +42,7 @@ enum assertOnTruncation     = false; // Trigger an assertion when formatting to 
 enum use_cstdio             = true; // Use the standard C library output functions when printing to the console
 
 import std.traits;
+import core.stdc.stdlib : atoi; // TODO: Remove our dependence on atoi
 
 alias ArrayTarget(T : U[], U) = U;
 enum bool isCString(T) = is(T == char*) || is(T == const(char)*) || is(T == immutable(char)*);
@@ -349,9 +349,6 @@ bool isDigit(char c)
 
 FormatSpec getFormatSpec(in char[] command)
 {
-    import core.stdc.stdlib : atoi;
-    import core.stdc.string : memcpy;
-
     FormatSpec result;
     assert(isDigit(command[0]), "Format command must start with numeric argument index.");
 
@@ -367,7 +364,7 @@ FormatSpec getFormatSpec(in char[] command)
 
     char[12] argIndexStr;
     assert(end < argIndexStr.length);
-    memcpy(argIndexStr.ptr, command.ptr, end);
+    argIndexStr[0 .. end] = command[0 .. end];
     argIndexStr[end] = '\0';
     uint argIndex = atoi(argIndexStr.ptr);
     result.argIndex = argIndex;
@@ -467,48 +464,48 @@ enum printCommon = `
                 mixin(outputPolicy);
                 fmtCursor++;
                 fmtCopyToBufferIndex = fmtCursor;
-
-                continue;
             }
+            else
+            {            
+                mixin(outputPolicy);
 
-            mixin(outputPolicy);
-
-            fmtCursor++;
-            size_t commandStart = fmtCursor;
-            size_t commandEnd   = fmtCursor;
-            while(fmtCursor < fmt.length)
-            {
-                if (fmt[fmtCursor] == '}')
-                {
-                    commandEnd = fmtCursor;
-                    fmtCursor++;
-                    break;
-                }
                 fmtCursor++;
-            }
-
-            fmtCopyToBufferIndex = fmtCursor;
-
-            auto formatCommand = fmt[commandStart .. commandEnd];
-
-            auto formatSpec = getFormatSpec(formatCommand);
-            assert(formatSpec.argIndex < args.length, "ERR: Format index exceeds length of provided arguments.");
-
-            // NOTE: Variadic template argument indexing based on std.format.getNth(...) from Phobos.
-            outer: switch(formatSpec.argIndex)
-            {
-                static foreach(i, _; Args)
+                size_t commandStart = fmtCursor;
+                size_t commandEnd   = fmtCursor;
+                while(fmtCursor < fmt.length)
                 {
-                    case i:
+                    if (fmt[fmtCursor] == '}')
                     {
-                        mixin(formatPolicy);
+                        commandEnd = fmtCursor;
+                        fmtCursor++;
+                        break;
+                    }
+                    fmtCursor++;
+                }
+
+                fmtCopyToBufferIndex = fmtCursor;
+
+                auto formatCommand = fmt[commandStart .. commandEnd];
+
+                auto formatSpec = getFormatSpec(formatCommand);
+                assert(formatSpec.argIndex < args.length, "ERR: Format index exceeds length of provided arguments.");
+
+                // NOTE: Variadic template argument indexing based on std.format.getNth(...) from Phobos.
+                outer: switch(formatSpec.argIndex)
+                {
+                    static foreach(i, _; Args)
+                    {
+                        case i:
+                        {
+                            mixin(formatPolicy);
+                        } break outer;
+                    }
+
+                    default:
+                    {
+                        assert(0,"ERR: Unable to access variadic argument.");
                     } break outer;
                 }
-
-                default:
-                {
-                    assert(0,"ERR: Unable to access variadic argument.");
-                } break outer;
             }
         }
         else
@@ -537,12 +534,23 @@ if(isCharArray!T)
     return buffer[0..zeroIndex];
 }
 
-void printOut(T, Args...)(T fmt, Args args)
+void formatOut(T, Args...)(T fmt, Args args)
 if(isCharArray!T)
 {
     FileHandle file = stdOut;
 
-    enum outputPolicy = `printFile(file, fmt[fmtCopyToBufferIndex .. fmtCursor]);`;
+    enum outputPolicy = `printFile(file, fmt.ptr[fmtCopyToBufferIndex .. fmtCursor]);`;
+    enum formatPolicy = `formatArg(args[i], formatSpec, file);`;
+
+    mixin(printCommon);
+}
+
+void formatErr(T, Args...)(T fmt, Args args)
+if(isCharArray!T)
+{
+    FileHandle file = stdErr;
+
+    enum outputPolicy = `printFile(file, fmt.ptr[fmtCopyToBufferIndex .. fmtCursor]);`;
     enum formatPolicy = `formatArg(args[i], formatSpec, file);`;
 
     mixin(printCommon);
@@ -553,17 +561,6 @@ if(isCharArray!T)
 {
     FileHandle file = stdOut;
     printFile(file, msg);
-}
-
-void printErr(T, Args...)(T fmt, Args args)
-if(isCharArray!T)
-{
-    FileHandle file = stdErr;
-
-    enum outputPolicy = `printFile(file, fmt[fmtCopyToBufferIndex..fmtCursor]);`;
-    enum formatPolicy = `formatArg(args[i], formatSpec, file);`;
-
-    mixin(printCommon);
 }
 
 void printErr(T)(T msg)
@@ -979,7 +976,7 @@ char[] formatDouble(return ref char[512] buf, double fv)
                }
             }
          
-    return buf[0 .. bf - buf.ptr]; // TODO: Only return the amount actually written to!
+    return buf[0 .. bf - buf.ptr];
 }
 
 void stbsp__lead_sign(stbsp__uint32 fl, char *sign)

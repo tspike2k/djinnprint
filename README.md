@@ -14,7 +14,7 @@ void main()
     printOut(format("The numbers are {2}, {0}, and {1}.\n", buffer, 1, 2, 3));
 
     // Format directly to stdout:
-    printOut("The numbers are {1}, {2}, and {0}.\n", 1, 2, 3);
+    formatOut("The numbers are {1}, {2}, and {0}.\n", 1, 2, 3);
 
     // Format structs:
     struct TestStruct
@@ -24,7 +24,7 @@ void main()
     }
 
     TestStruct test = TestStruct([1, 2], 3.0f);
-    printOut("TestStruct{0}\n", test);
+    formatOut("TestStruct{0}\n", test);
 }
 ```
 
@@ -81,7 +81,6 @@ This project is currently a very early proof-of-concept and is in no way product
 ### Todo
 
 * Testing on Windows.
-* Custom float/double to string conversion that doesn't rely on snprintf.
 * Add formatting options for variables (commas for integers, hex output, etc.). Additionally, there should be an option to print the name of each struct type before the value of its members. This could be useful in code generation. For instance, printing `Vect2(1.0000f, 1.0000f)` would be useful for this case rather than `(1.0000, 1.000)`, the latter of which is the default behavior.
 * Add support for Ranges (both printing them out and formatting into them).
 

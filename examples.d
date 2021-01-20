@@ -98,7 +98,7 @@ void formatExamples()
     char nullMessage = '\0';
     printOut(format("Null string: `{0}`\n", buffer, &nullMessage));
 
-    printOut(format("This is an {{escape character test}.\n", buffer));
+    printOut(format("This is an {{escape character test.\n", buffer, t));
 
     printOut("\n");
     printOut(format("Long string: `{0}`\n", buffer, longString));
@@ -124,53 +124,53 @@ void formatExamples()
     printOut(format("The address of outer is {0}\n", buffer, &outer));
 }
 
-void printOutExamples()
+void formatOutExamples()
 {
-    printOut("\n\n----printOut(...) Examples----\n");
+    formatOut("\n\n----formatOut(...) Examples----\n");
 
     string formatString = "Arguments can be printed out of order: {2} {0} {1}\n";
     int t = 42;
-    printOut(formatString, 1, -2, t);
+    formatOut(formatString, 1, -2, t);
 
     char[] msg = cast(char[])"Hello, world!";
     float f = -32.0f;
-    printOut(formatString, 2, msg, f);
+    formatOut(formatString, 2, msg, f);
 
     char testChar = 'T';
-    printOut("We can print chars: {0}\n", testChar);
+    formatOut("We can print chars: {0}\n", testChar);
 
     char[21] charArray = "This is a char array.";
-    printOut("char array: `{0}`\n", charArray);
+    formatOut("char array: `{0}`\n", charArray);
 
-    printOut("Can even print cstrings: `{0}`\n", msg.ptr);
+    formatOut("Can even print cstrings: `{0}`\n", msg.ptr);
 
     char nullMessage = '\0';
 
-    printOut("Null string: `{0}`\n", &nullMessage);
-    printOut("This is an {{escape character test}.\n");
+    formatOut("Null string: `{0}`\n", &nullMessage);
+    formatOut("This is an {{escape character test}.\n");
 
-    printOut("\n");
-    printOut("Long string: `{0}`\n", longString);
-    printOut("\n\n");
-    printOut("Long cstring: `{0}`\n", longString.ptr);
-    printOut("\n\n");
+    formatOut("\n");
+    formatOut("Long string: `{0}`\n", longString);
+    formatOut("\n\n");
+    formatOut("Long cstring: `{0}`\n", longString.ptr);
+    formatOut("\n\n");
 
     TestStruct test = TestStruct([1, 2], 3.0f);
-    printOut("The struct is: {0}{1}\n", typeof(test).stringof, test);
+    formatOut("The struct is: {0}{1}\n", typeof(test).stringof, test);
 
     int[5] arrayTest = [0, 1, 2, 3, 4];
-    printOut("arrayTest: {0}\n", arrayTest);
+    formatOut("arrayTest: {0}\n", arrayTest);
 
     TestEnum te = TestEnum.BETA;
-    printOut("The enum is {0}\n", te);
+    formatOut("The enum is {0}\n", te);
 
     Vect2 vec = Vect2(2.0f, 3.0f);
-    printOut("Vect2 vec: {0}\n", vec);
+    formatOut("Vect2 vec: {0}\n", vec);
 
     Outer outer = Outer(Inner(TestEnum.GAMMA, 2, 4), 3.1415f);
-    printOut("outer == {0}\n", outer);
+    formatOut("outer == {0}\n", outer);
 
-    printOut("The address of outer is {0}\n", &outer);
+    formatOut("The address of outer is {0}\n", &outer);
 }
 
 enum EntityType
@@ -253,14 +253,14 @@ void unionExamples()
     d.type = EntityType.DOOR;
     d.opened = true;
 
-    printOut("{0}\n", player);
-    printOut(format("{0}\n", buffer, door));
+    formatOut("{0}\n", player);
+    formatOut(format("{0}\n", buffer, door));
 
     AnonUnion au;
     au.type = AnonUnionType.ID;
     au.name = cast(char[])"Anon union name"; // TODO: For some odd reason, trying to print this under GDC will output garbage. This needs to be fixed.
     au.t = 16.32;
-    printOut("{0}\n", au);
+    formatOut("{0}\n", au);
 }
 
 extern(C) int main()
@@ -275,7 +275,7 @@ extern(C) int main()
 
     formatExamples();
 
-    printOutExamples();
+    formatOutExamples();
 
     unionExamples();
 
