@@ -270,21 +270,12 @@ struct BufferRange
     
     nothrow @nogc:
     
-    enum putSrc = `
+    void put(in char[] c)
+    {
         auto bytesLeft = e.length - count;
         auto toWrite = c.length > bytesLeft ? bytesLeft : c.length;
         e[count .. count+toWrite] = c[0 .. toWrite];
-        count += toWrite;    
-    `;
-    
-    void put(in char[] c)
-    {
-        mixin(putSrc);
-    }
-    
-    void put(string c)
-    {
-        mixin(putSrc);
+        count += toWrite;  
     }
     
     auto opSlice(int start, int end)
