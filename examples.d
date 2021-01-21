@@ -98,7 +98,7 @@ void formatExamples()
     char nullMessage = '\0';
     printOut(format("Null string: `{0}`\n", buffer, &nullMessage));
 
-    printOut(format("This is an {{escape character test.\n", buffer, t));
+    printOut(format("This is an {{escape character test.}\n", buffer));
 
     printOut("\n");
     printOut(format("Long string: `{0}`\n", buffer, longString));
@@ -263,6 +263,61 @@ void unionExamples()
     formatOut("{0}\n", au);
 }
 
+struct BufferRange
+{
+    char[2048] e;
+    uint count;
+    
+    nothrow @nogc:
+    
+    enum putSrc = `
+        auto bytesLeft = e.length - count;
+        auto toWrite = c.length > bytesLeft ? bytesLeft : c.length;
+        e[count .. count+toWrite] = c[0 .. toWrite];
+        count += toWrite;    
+    `;
+    
+    void put(in char[] c)
+    {
+        mixin(putSrc);
+    }
+    
+    void put(string c)
+    {
+        mixin(putSrc);
+    }
+    
+    auto opSlice(int start, int end)
+    {
+        return e[start..end];
+    }
+    
+    uint opDollar() { return count; }
+}
+
+void rangeExamples()
+{
+    import std.range;
+    import std.algorithm;
+    
+    printOut("\n\n----Range examples (WIP)----\n");
+    int a, b, c;
+    a = 1;
+    b = 2;
+    c = 4;
+    BufferRange range;
+    format("The numbers are {0}, {1}, {2}", range, a, b, c);
+    formatOut("OutputRange: {0}\n", range[0..$]);
+    
+    auto r = iota(7) // Generates numbers in the range of [0 .. 7)
+            .cycle    // Infinitely repeates a given range
+            .take(16) // Takes a given number off an infinite range
+            .retro() // Reverses a given range
+            .filter!(a => a % 2 == 0); // Filter out odd numbers from the given range
+
+    formatOut("InputRange: {0}\n", r);
+}
+
 extern(C) int main()
 {
     version(D_ModuleInfo){}
@@ -278,6 +333,8 @@ extern(C) int main()
     formatOutExamples();
 
     unionExamples();
+
+    rangeExamples();
 
     return 0;
 }

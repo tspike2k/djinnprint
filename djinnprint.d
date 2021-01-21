@@ -12,8 +12,6 @@
 //   Additionally, there should be an option to print the name of each struct type before the value of its members. This could be useful in code generation.
 //   For instance, printing `Vect2(1.0000f, 1.0000f)` would be useful for this case rather than `(1.0000, 1.000)`, the latter of which is the default behavior.
 
-// - Add support for Ranges (both printing them out and formatting into them).
-
 // NOTE: The order of members returned by __traits(allMembers) is not guaranteed to be in the order they appear in the struct definition.
 // However, it SEEMS that the .tupleof property is expected (perhaps even required) to be ordered this way. This behavior is what we're relying on.
 // Should this break in the future, we're going to have to make some changes.
@@ -41,7 +39,8 @@ enum assertOnTruncation     = false; // Trigger an assertion when formatting to 
 enum use_cstdio             = true; // Use the standard C library output functions when printing to the console
 
 import std.traits;
-import core.stdc.stdlib : atoi; // TODO: Remove our dependence on atoi
+import std.math : pow;
+import std.range;
 
 alias ArrayTarget(T : U[], U) = U;
 enum bool isCString(T) = is(T == char*) || is(T == const(char)*) || is(T == immutable(char)*);
@@ -113,8 +112,8 @@ size_t length(const(char*) s)
     return result;
 }
 
-ulong formatArg(T, Dest)(ref T t, in FormatSpec spec, Dest dest)
-if(is(Dest == FileHandle) || (isArray!Dest && is(ArrayTarget!Dest == char)))
+ulong formatArg(T, Dest)(ref T t, in FormatSpec spec, auto ref Dest dest)
+if(is(Dest == FileHandle) || (isArray!Dest && is(ArrayTarget!Dest == char)) || (isOutputRange!(Dest, char) && !isArray!Dest)) 
 {
     // NOTE: The return value of formatArg is meaningless when dest is a FileHandle.
     ulong bytesWritten = 0;
@@ -142,6 +141,20 @@ if(is(Dest == FileHandle) || (isArray!Dest && is(ArrayTarget!Dest == char)))
             printFile(dest, t);
         }
 
+        template formatPolicy(string name)
+        {
+            enum formatPolicy = "formatArg(" ~ name ~ ", spec, dest);";
+        }
+    }
+    else static if(isOutputRange!(Dest, char) && !isArray!Dest)
+    {
+        void outPolicy(T)(in T t)
+        if(isCharArray!T)
+        {
+            pragma(inline, true)
+            dest.put(t);
+        }
+        
         template formatPolicy(string name)
         {
             enum formatPolicy = "formatArg(" ~ name ~ ", spec, dest);";
@@ -196,9 +209,6 @@ if(is(Dest == FileHandle) || (isArray!Dest && is(ArrayTarget!Dest == char)))
     }
     else static if (is(T == float) || is(T == double))
     {
-        // TODO: Eleminate our dependence on snprintf and use our own float formatting functions. Look to stb_sprintf?
-        // Note that even Phobos (the D standard library) used snprintf to format floats.
-
         char[512] buffer;
         auto result = formatDouble(buffer, t);
         static if(is(Dest == FileHandle))
@@ -229,10 +239,20 @@ if(is(Dest == FileHandle) || (isArray!Dest && is(ArrayTarget!Dest == char)))
         }
         outPolicy(t[0 .. endIndex]);
     }
+    else static if(isInputRange!T)
+    {
+        size_t i = 0;
+        foreach(ref v; t)
+        {
+            if(i > 0) outPolicy(", ");
+            mixin(formatPolicy!`v`);        
+            i++;
+        }
+    }
     else static if(is(T == struct))
     {
         outPolicy("(");
-
+        
         auto members = t.tupleof;
         static foreach(i, member; members)
         {{
@@ -361,11 +381,15 @@ FormatSpec getFormatSpec(in char[] command)
         }
     }
 
-    char[12] argIndexStr;
-    assert(end < argIndexStr.length);
-    argIndexStr[0 .. end] = command[0 .. end];
-    argIndexStr[end] = '\0';
-    uint argIndex = atoi(argIndexStr.ptr);
+    auto argIndexStr = command[0 .. end];
+    uint argIndex = 0;
+    uint place = 0;
+    foreach_reverse(ref c; argIndexStr)
+    {
+        argIndex += (c - '0') * pow(10, place);
+        place++;
+    }
+    
     result.argIndex = argIndex;
 
     return result;
@@ -531,6 +555,19 @@ if(isCharArray!T)
     buffer[zeroIndex] = '\0';
 
     return buffer[0..zeroIndex];
+}
+
+char[] format(T, U, Args...)(T fmt, ref U buffer, Args args)
+if(isCharArray!T && isOutputRange!(U, char) && !isCharArray!U)
+{
+    size_t bufferWritten = 0;
+
+    enum outputPolicy = `buffer.put(fmt[fmtCopyToBufferIndex .. fmtCursor]);`;
+    enum formatPolicy = `formatArg(args[i], formatSpec, buffer);`;
+
+    mixin(printCommon);
+
+    return buffer[0..$];
 }
 
 void formatOut(T, Args...)(T fmt, Args args)
