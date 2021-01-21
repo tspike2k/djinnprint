@@ -98,7 +98,7 @@ void formatExamples()
     char nullMessage = '\0';
     printOut(format("Null string: `{0}`\n", buffer, &nullMessage));
 
-    printOut(format("This is an {{escape character test.}\n", buffer));
+    printOut(format("This is an {{escape character test}.\n", buffer));
 
     printOut("\n");
     printOut(format("Long string: `{0}`\n", buffer, longString));
@@ -213,8 +213,6 @@ union Entity
     Entity_Door   door;
 }
 
-// TODO: Decide how to format structs with anonymous unions.
-
 enum AnonUnionType
 {
     NAME,
@@ -291,7 +289,7 @@ void rangeExamples()
     import std.range;
     import std.algorithm;
     
-    printOut("\n\n----Range examples (WIP)----\n");
+    printOut("\n\n----Range examples----\n");
     int a, b, c;
     a = 1;
     b = 2;

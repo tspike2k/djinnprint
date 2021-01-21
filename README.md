@@ -84,7 +84,6 @@ This project is currently a very early proof-of-concept and is in no way product
 
 * Testing on Windows.
 * Add formatting options for variables (commas for integers, hex output, etc.). Additionally, there should be an option to print the name of each struct type before the value of its members. This could be useful in code generation. For instance, printing `Vect2(1.0000f, 1.0000f)` would be useful for this case rather than `(1.0000, 1.000)`, the latter of which is the default behavior.
-* Add support for Ranges (both printing them out and formatting into them).
 
 ## Installation
 

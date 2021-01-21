@@ -241,6 +241,8 @@ if(is(Dest == FileHandle) || (isArray!Dest && is(ArrayTarget!Dest == char)) || (
     }
     else static if(isInputRange!T)
     {
+        static assert(!isInfinite!T);
+        
         size_t i = 0;
         foreach(ref v; t)
         {
