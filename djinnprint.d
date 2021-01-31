@@ -39,7 +39,6 @@ enum assertOnTruncation     = false; // Trigger an assertion when formatting to 
 enum use_cstdio             = true; // Use the standard C library output functions when printing to the console
 
 import std.traits;
-import std.math : pow;
 import std.range;
 
 alias ArrayTarget(T : U[], U) = U;
@@ -242,7 +241,8 @@ if(is(Dest == FileHandle) || (isArray!Dest && is(ArrayTarget!Dest == char)) || (
     else static if(isInputRange!T)
     {
         static assert(!isInfinite!T);
-        
+
+        outPolicy("[");
         size_t i = 0;
         foreach(ref v; t)
         {
@@ -250,6 +250,7 @@ if(is(Dest == FileHandle) || (isArray!Dest && is(ArrayTarget!Dest == char)) || (
             mixin(formatPolicy!`v`);        
             i++;
         }
+        outPolicy("]");
     }
     else static if(is(T == struct))
     {
@@ -388,7 +389,7 @@ FormatSpec getFormatSpec(in char[] command)
     uint place = 0;
     foreach_reverse(ref c; argIndexStr)
     {
-        argIndex += (c - '0') * pow(10, place);
+        argIndex += (c - '0') * (10 ^^ place);
         place++;
     }
     
