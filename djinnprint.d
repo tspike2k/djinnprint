@@ -133,8 +133,7 @@ if(is(Dest == FileHandle) || (isArray!Dest && is(ArrayTarget!Dest == char)) || (
 
     static if (is(Dest == FileHandle))
     {
-        void outPolicy(T)(in T t)
-        if(isCharArray!T)
+        void outPolicy(inout(char)[] t)
         {
             pragma(inline, true);
             printFile(dest, t);
@@ -147,8 +146,7 @@ if(is(Dest == FileHandle) || (isArray!Dest && is(ArrayTarget!Dest == char)) || (
     }
     else static if(isOutputRange!(Dest, char) && !isArray!Dest)
     {
-        void outPolicy(T)(in T t)
-        if(isCharArray!T)
+        void outPolicy(inout(char)[] t)
         {
             pragma(inline, true)
             dest.put(t);
@@ -161,8 +159,7 @@ if(is(Dest == FileHandle) || (isArray!Dest && is(ArrayTarget!Dest == char)) || (
     }
     else
     {
-        void outPolicy(T)(in T t)
-        if(isCharArray!T)
+        void outPolicy(inout(char)[] t)
         {
             pragma(inline, true)
             bytesWritten += safeCopy(dest[bytesWritten .. $], t);
@@ -398,8 +395,7 @@ FormatSpec getFormatSpec(in char[] command)
     return result;
 }
 
-size_t safeCopy(T)(char[] dest, T source)
-if (isCharArray!T)
+size_t safeCopy(char[] dest, inout(char)[] source)
 {
     size_t bytesToCopy = void;
     bool truncated = false;
@@ -544,8 +540,7 @@ enum printCommon = `
 
 public:
 
-char[] format(T, Args...)(T fmt, char[] buffer, Args args)
-if(isCharArray!T)
+char[] format(Args...)(inout(char)[] fmt, char[] buffer, Args args)
 {
     size_t bufferWritten = 0;
 
@@ -560,8 +555,8 @@ if(isCharArray!T)
     return buffer[0..zeroIndex];
 }
 
-char[] format(T, U, Args...)(T fmt, ref U buffer, Args args)
-if(isCharArray!T && isOutputRange!(U, char) && !isCharArray!U)
+char[] format(U, Args...)(inout(char)[] fmt, ref U buffer, Args args)
+if(isOutputRange!(U, char) && !isCharArray!U)
 {
     size_t bufferWritten = 0;
 
@@ -573,8 +568,7 @@ if(isCharArray!T && isOutputRange!(U, char) && !isCharArray!U)
     return buffer[0..$];
 }
 
-void formatOut(T, Args...)(T fmt, Args args)
-if(isCharArray!T)
+void formatOut(Args...)(inout(char)[] fmt, Args args)
 {
     FileHandle file = stdOut;
 
@@ -584,8 +578,7 @@ if(isCharArray!T)
     mixin(printCommon);
 }
 
-void formatErr(T, Args...)(T fmt, Args args)
-if(isCharArray!T)
+void formatErr(Args...)(inout(char)[] fmt, Args args)
 {
     FileHandle file = stdErr;
 
@@ -595,22 +588,7 @@ if(isCharArray!T)
     mixin(printCommon);
 }
 
-void printOut(T)(T msg)
-if(isCharArray!T)
-{
-    FileHandle file = stdOut;
-    printFile(file, msg);
-}
-
-void printErr(T)(T msg)
-if(isCharArray!T)
-{
-    FileHandle file = stdErr;
-    printFile(file, msg);
-}
-
-void printFile(T, Args...)(FileHandle file, T fmt, Args args)
-if(isCharArray!T)
+void formatFile(Args...)(FileHandle file, inout(char)[] fmt, Args args)
 {
     enum outputPolicy = `printFile(file, fmt[fmtCopyToBufferIndex .. fmtCursor]);`;
     enum formatPolicy = `formatArg(args[i], formatSpec, file);`;
@@ -618,8 +596,19 @@ if(isCharArray!T)
     mixin(printCommon);
 }
 
-void printFile(T)(FileHandle file, T msg)
-if(isCharArray!T)
+void printOut(inout(char)[] msg)
+{
+    FileHandle file = stdOut;
+    printFile(file, msg);
+}
+
+void printErr(inout(char)[] msg)
+{
+    FileHandle file = stdErr;
+    printFile(file, msg);
+}
+
+void printFile(FileHandle file, inout(char)[] msg)
 {
     static if(use_cstdio)
     {

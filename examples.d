@@ -83,10 +83,13 @@ void formatExamples()
     auto result = format(formatString, buffer, 1, -2, t);
     printOut(result);
 
-    char[] msg = cast(char[])"Hello, world!";
+    const(char)[] msg = "Hello, world!";
     float f = -32.0f;
     printOut(format(formatString, buffer, 2, msg, f));
-
+    
+    char[39] mutableFormatString = "We can use mutable format strings: {0}\n";
+    printOut(format(mutableFormatString, buffer, msg));
+    
     char testChar = 'T';
     printOut(format("We can print chars: {0}\n", buffer, testChar));
 
@@ -132,10 +135,14 @@ void formatOutExamples()
     int t = 42;
     formatOut(formatString, 1, -2, t);
 
-    char[] msg = cast(char[])"Hello, world!";
+    const(char)[] msg = "Hello, world!";
     float f = -32.0f;
     formatOut(formatString, 2, msg, f);
 
+    char[39] mutableFormatString = "We can use mutable format strings: {0}\n";
+    
+    formatOut(mutableFormatString, msg);
+    
     char testChar = 'T';
     formatOut("We can print chars: {0}\n", testChar);
 
