@@ -68,13 +68,9 @@ For convenience, printOut() and printErr() are provided to simply take a string 
 
 Unions are an odd case. As union members share the same memory layout, to format each member is redundant. Even worse, under some conditions certain members will be in an invalid state. This could be mitigated by asking the user to supply a toString() method with every union they wish to format. But the union itself shouldn't need to know *how* to format its members. After all, that's the responsibility of this library. Rather the responsibility of the union should be to tell the library which members should be formatted and under what conditions.
 
-By default, only the first member of a union is formatted. If another union member should be formatted instead it can be marked with the @ToPrint UDA. In the case of tagged/discriminated unions, it makes sense to print out a specific union member based on how the union is tagged. This can be done by using the @ToPrintWhen UDA. This is currently slightly cumbersome to use. See the examples.d file for a demonstration of how to apply this UDA to a tagged/discriminated union.
+By default, only the first member of a union is formatted. If another union member should be formatted instead it can be marked with the @ToPrint UDA. In the case of tagged/discriminated unions, it makes sense to only format a given union member when the union is flagged as being an appropriate type. This can be done by adding method called toPrintIndex to the union that returns the index of the union member that should be printed. This method must be marked as "nothrow" and "@nogc". See the examples.d file for a demonstration of how to apply this to tagged/discriminated union.
 
-Anonymous unions are a bit trickier. D doesn't provide introspection features for detecting if struct members are part of an anonymous union beyond testing the byte offset of each member. In Phobos, std.format handles anonymous unions by marking members sharing the same memory with __#{overlap ...}__ (see std.format.formatValueImpl() for details). For now, the library simply prints the first member of the anonymous union; the @ToPrint and @ToPrintWhen UDAs currently do not work with anonymous unions.
-
-### Initializing djinnprint
-
-Under some platforms (such as Windows) djinnprint will need to be initialized in order to set up pointers to the standard output/error streams. This is done automatically if module constructors are enabled. If module constructors are disabled (in the case of compiling without the D runtime or using the -betterC compiler switch in DMD) djinnprint.init should be called before calling any of the printing functions provided by djinnprint.
+Anonymous unions are a bit trickier. D doesn't provide introspection features for detecting if struct members are part of an anonymous union beyond testing the byte offset of each member. In Phobos, std.format handles anonymous unions by marking members sharing the same memory with __#{overlap ...}__ (see std.format.formatValueImpl() for details). For now, this library simply prints the first member of the anonymous union; the @ToPrint UDA currently can't be used to narrow down which member of an anonymous union should be printed.
 
 ## Status
 
@@ -84,6 +80,7 @@ This project is currently a very early proof-of-concept and is in no way product
 
 * Testing on Windows.
 * Add formatting options for variables (commas for integers, hex output, etc.). Additionally, there should be an option to print the name of each struct type before the value of its members. This could be useful in code generation. For instance, printing `Vect2(1.0000f, 1.0000f)` would be useful for this case rather than `(1.0000, 1.000)`, the latter of which is the default behavior.
+* Figure out a good way to format anonymous union members of structs. 
 
 ## Installation
 

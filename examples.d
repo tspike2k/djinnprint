@@ -209,15 +209,16 @@ struct Entity_Door
     bool opened;
 }
 
-@ToPrintWhen!EntityType("common.type",
-    [EntityType.PLAYER, EntityType.DOOR],
-    ["player", "door"]
-)
 union Entity
 {
     Entity_Common common;
     Entity_Player player;
     Entity_Door   door;
+    
+    @nogc nothrow size_t toPrintIndex()
+    {
+        return cast(size_t)(common.type);
+    }
 }
 
 enum AnonUnionType
@@ -263,7 +264,7 @@ void unionExamples()
 
     AnonUnion au;
     au.type = AnonUnionType.ID;
-    au.name = cast(char[])"Anon union name"; // TODO: For some odd reason, trying to print this under GDC will output garbage. This needs to be fixed.
+    au.name = cast(char[])"Anon union name";
     au.t = 16.32;
     formatOut("{0}\n", au);
 }
@@ -307,7 +308,7 @@ void rangeExamples()
     
     auto r = iota(7) // Generates numbers in the range of [0 .. 7)
             .cycle    // Infinitely repeates a given range
-            .take(16) // Takes a given number off an infinite range
+            .take(16) // Takes a given number of elements off an infinite range
             .retro() // Reverses a given range
             .filter!(a => a % 2 == 0); // Filter out odd numbers from the given range
 
@@ -316,14 +317,6 @@ void rangeExamples()
 
 extern(C) int main()
 {
-    version(D_ModuleInfo){}
-    else
-    {
-        // NOTE: You only need to call the .init() function manually if module constructors are disabled,
-        // such as in the case when -betterC is used.
-        djinnprint.init();
-    }
-
     formatExamples();
 
     formatOutExamples();

@@ -13,8 +13,8 @@
 //   For instance, printing `Vect2(1.0000f, 1.0000f)` would be useful for this case rather than `(1.0000, 1.000)`, the latter of which is the default behavior.
 
 // NOTE: The order of members returned by __traits(allMembers) is not guaranteed to be in the order they appear in the struct definition.
-// However, it SEEMS that the .tupleof property is expected (perhaps even required) to be ordered this way. This behavior is what we're relying on.
-// Should this break in the future, we're going to have to make some changes.
+// However, it SEEMS that the .tupleof property is expected (perhaps even required) to be ordered this way. This behavior appears to be expected by 
+// some code in Phobos, so we'll rely on this behavior. Should this break in the future, we're going to have to make some changes.
 //
 // See here for some discussions on this topic:
 // https://forum.dlang.org/thread/bug-19036-3@https.issues.dlang.org%2F
@@ -24,13 +24,6 @@
 module djinnprint;
 
 enum ToPrint;
-
-struct ToPrintWhen(T)
-{
-    string unionTag;
-    T[]      cases;
-    string[] members;
-}
 
 private @nogc nothrow:
 
@@ -56,8 +49,6 @@ static if(use_cstdio)
     alias FileHandle = FILE*;
     alias stdOut = stdout;
     alias stdErr = stderr;
-
-    public void init(){};
 }
 else
 {
@@ -66,30 +57,12 @@ else
         alias FileHandle = int;
         enum FileHandle stdOut = 1;
         enum FileHandle stdErr = 2;
-
-        public void init(){};
     }
     else version(Windows)
     {
         // TODO: Test on Windows
         import core.sys.windows : FileHandle, GetStdHandle;
         alias FileHandle = HANDLE;
-        __gshared FileHandle stdOut;
-        __gshared FileHandle stdErr;
-
-        public void init()
-        {
-            HANDLE stdOut = GetStdHandle(STD_OUTPUT_HANDLE);
-            HANDLE stdErr = GetStdHandle(STD_ERROR_HANDLE);
-        }
-
-        version(D_ModuleInfo)
-        {
-            static this()
-            {
-                init();
-            }
-        }
     }
     else
     {
@@ -171,7 +144,7 @@ if(is(Dest == FileHandle) || (isArray!Dest && is(ArrayTarget!Dest == char)) || (
         }
     }
 
-    static if (is(T == enum))
+    static if (is(Unqual!T == enum))
     {
         static foreach (i, member; EnumMembers!T)
         {
@@ -181,7 +154,7 @@ if(is(Dest == FileHandle) || (isArray!Dest && is(ArrayTarget!Dest == char)) || (
             }
         }
     }
-    else static if(is(T == bool))
+    else static if(is(Unqual!T == bool))
     {
         if(t)
         {
@@ -198,12 +171,12 @@ if(is(Dest == FileHandle) || (isArray!Dest && is(ArrayTarget!Dest == char)) || (
         auto result = intToString(intBuffer, t, 10, spec);
         outPolicy(result);
     }
-    else static if (is(T == char))
+    else static if (is(Unqual!T == char))
     {
         char[1] temp = t;
         outPolicy(temp);
     }
-    else static if (is(T == float) || is(T == double))
+    else static if (is(Unqual!T == float) || is(Unqual!T == double))
     {
         char[512] buffer;
         auto result = formatDouble(buffer, t);
@@ -249,7 +222,7 @@ if(is(Dest == FileHandle) || (isArray!Dest && is(ArrayTarget!Dest == char)) || (
         }
         outPolicy("]");
     }
-    else static if(is(T == struct))
+    else static if(is(Unqual!T == struct))
     {
         outPolicy("(");
         
@@ -269,7 +242,7 @@ if(is(Dest == FileHandle) || (isArray!Dest && is(ArrayTarget!Dest == char)) || (
         }}
         outPolicy(")");
     }
-    else static if(is(T == union))
+    else static if(is(Unqual!T == union))
     {
         alias taggedToPrintMembers = getSymbolsByUDA!(T, ToPrint);
         static if (taggedToPrintMembers.length > 0)
@@ -285,25 +258,22 @@ if(is(Dest == FileHandle) || (isArray!Dest && is(ArrayTarget!Dest == char)) || (
             }}
             outPolicy(")");
         }
-        else static if (hasUDA!(T, ToPrintWhen))
+        else static if(__traits(hasMember, T, "toPrintIndex"))
         {
-            enum uda = getUDAs!(T, ToPrintWhen)[0];
-            static assert(uda.cases.length == uda.members.length);
-
-            tagSwitch: switch(mixin("t." ~ uda.unionTag))
+            outer: switch(t.toPrintIndex())
             {
-                static foreach(i, c; uda.cases)
+                static foreach(i, m; T.tupleof)
                 {
-                    case c:
+                    case i:
                     {
-                        enum surroundWithQuotes = useQuotes!(typeof(mixin("t." ~ uda.members[i])));
+                        enum surroundWithQuotes = useQuotes!(typeof(m));
                         static if(surroundWithQuotes) outPolicy("\"");
-                        mixin(formatPolicy!`mixin("t." ~ uda.members[i])`);
+                        mixin(formatPolicy!`t.tupleof[i]`);
                         static if(surroundWithQuotes) outPolicy("\"");
-                    } break tagSwitch;
+                    } break outer;
                 }
-
-                default: assert(0, "Unable to find matching @ToPrintWhen member"); break;
+            
+                default: assert(0, "Invalid toPrintIndex value."); break outer;
             }
         }
         else
@@ -416,26 +386,28 @@ size_t safeCopy(char[] dest, inout(char)[] source)
     return bytesToCopy;
 }
 
-char[] intToString(T)(ref char[30] buffer, T t, ubyte base, FormatSpec spec)
+char[] intToString(T)(ref char[30] buffer, in T t, ubyte base, FormatSpec spec)
 if(isIntegral!T)
 {
+    T n = t;
+
     static if (isSigned!T)
     {
         import std.math : abs, sgn;
-        T sign = cast(T)sgn(t);
-        t = abs(t); // NOTE: Strip off the sign to prevent the mod operator from giving us a negative array index.
+        T sign = cast(T)sgn(n);
+        n = abs(n); // NOTE: Strip off the sign to prevent the mod operator from giving us a negative array index.
     }
 
     size_t finish = buffer.length;
 
     foreach_reverse(place; 0..finish)
     {
-        buffer[place] = intToCharTable[t % base];
-        t /= base;
+        buffer[place] = intToCharTable[n % base];
+        n /= base;
 
         // TODO: Add commas in the conversion string?
 
-        if(t == 0)
+        if(n == 0)
         {
             static if (isSigned!T)
             {
@@ -570,7 +542,14 @@ if(isOutputRange!(U, char) && !isCharArray!U)
 
 void formatOut(Args...)(inout(char)[] fmt, Args args)
 {
-    FileHandle file = stdOut;
+    version(Windows)
+    {
+        HANDLE file = GetStdHandle(STD_OUTPUT_HANDLE);
+    }
+    else
+    {
+        FileHandle file = stdOut;
+    }
 
     enum outputPolicy = `printFile(file, fmt.ptr[fmtCopyToBufferIndex .. fmtCursor]);`;
     enum formatPolicy = `formatArg(args[i], formatSpec, file);`;
@@ -580,7 +559,14 @@ void formatOut(Args...)(inout(char)[] fmt, Args args)
 
 void formatErr(Args...)(inout(char)[] fmt, Args args)
 {
-    FileHandle file = stdErr;
+    version(Windows)
+    {
+        HANDLE file = GetStdHandle(STD_ERROR_HANDLE);
+    }
+    else
+    {
+        FileHandle file = stdErr;
+    }
 
     enum outputPolicy = `printFile(file, fmt.ptr[fmtCopyToBufferIndex .. fmtCursor]);`;
     enum formatPolicy = `formatArg(args[i], formatSpec, file);`;
@@ -598,13 +584,29 @@ void formatFile(Args...)(FileHandle file, inout(char)[] fmt, Args args)
 
 void printOut(inout(char)[] msg)
 {
-    FileHandle file = stdOut;
+    version(Windows)
+    {
+        HANDLE file = GetStdHandle(STD_OUTPUT_HANDLE);
+    }
+    else
+    {
+        FileHandle file = stdOut;
+    }
+    
     printFile(file, msg);
 }
 
 void printErr(inout(char)[] msg)
 {
-    FileHandle file = stdErr;
+    version(Windows)
+    {
+        HANDLE file = GetStdHandle(STD_ERROR_HANDLE);
+    }
+    else
+    {
+        FileHandle file = stdErr;
+    }
+    
     printFile(file, msg);
 }
 
@@ -613,28 +615,22 @@ void printFile(FileHandle file, inout(char)[] msg)
     static if(use_cstdio)
     {
         import core.stdc.stdio: fwrite;
-        if(file)
-        {
-            fwrite(msg.ptr, msg[0].sizeof, msg.length, file);
-        }
+        assert(file);
+        fwrite(msg.ptr, msg[0].sizeof, msg.length, file);
     }
     else
     {
         version(Posix)
         {
             import core.sys.posix.unistd : write;
-            if (file != -1)
-            {
-                write(file, msg.ptr, msg.length);
-            }
+            assert(file != -1);
+            write(file, msg.ptr, msg.length);
         }
         else version(Windows)
         {
             import core.sys.windows : WriteFile, INVALID_HANDLE_VALUE;
-            if(file != INVALID_HANDLE_VALUE)
-            {
-                WriteFile(file, msg.ptr, msg.length, null, null);
-            }
+            assert(file != INVALID_HANDLE_VALUE);
+            WriteFile(file, msg.ptr, msg.length, null, null);
         }
         else
         {
