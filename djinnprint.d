@@ -13,15 +13,13 @@
 //   For instance, printing `Vect2(1.0000f, 1.0000f)` would be useful for this case rather than `(1.0000, 1.000)`, the latter of which is the default behavior.
 
 // NOTE: The order of members returned by __traits(allMembers) is not guaranteed to be in the order they appear in the struct definition.
-// However, it SEEMS that the .tupleof property is expected (perhaps even required) to be ordered this way. This behavior appears to be expected by 
+// However, it SEEMS that the .tupleof property is expected (perhaps even required) to be ordered this way. This behavior appears to be expected by
 // some code in Phobos, so we'll rely on this behavior. Should this break in the future, we're going to have to make some changes.
 //
 // See here for some discussions on this topic:
 // https://forum.dlang.org/thread/bug-19036-3@https.issues.dlang.org%2F
 // https://forum.dlang.org/thread/odpdhayvxaglheqcntwj@forum.dlang.org
 // https://forum.dlang.org/post/stvphdwgugrlcgfkbyxc@forum.dlang.org
-
-module djinnprint;
 
 enum ToPrint;
 
@@ -84,13 +82,13 @@ size_t length(const(char*) s)
     return result;
 }
 
-ulong formatArg(T, Dest)(ref T t, in FormatSpec spec, auto ref Dest dest)
-if(is(Dest == FileHandle) || (isArray!Dest && is(ArrayTarget!Dest == char)) || (isOutputRange!(Dest, char) && !isArray!Dest)) 
+ulong formatArg(Type, Dest)(ref Type t, in FormatSpec spec, auto ref Dest dest)
+if(is(Dest == FileHandle) || (isArray!Dest && is(ArrayTarget!Dest == char)) || (isOutputRange!(Dest, char) && !isArray!Dest))
 {
-    // NOTE: The return value of formatArg is meaningless when dest is a FileHandle.
+    alias T = Unqual!Type;
     ulong bytesWritten = 0;
-    
-    size_t getHighestOffset(T, size_t memberCutoffIndex)()
+
+    size_t getHighestOffsetUntil(T, size_t memberCutoffIndex)()
     if(is(T == struct) || is(T == union))
     {
         size_t result = 0;
@@ -98,7 +96,7 @@ if(is(Dest == FileHandle) || (isArray!Dest && is(ArrayTarget!Dest == char)) || (
         {
             static if(i < memberCutoffIndex)
             {
-                result = result < T.tupleof[i].offsetof ? T.tupleof[i].offsetof : result;            
+                result = result < T.tupleof[i].offsetof ? T.tupleof[i].offsetof : result;
             }
         }
         return result;
@@ -110,11 +108,13 @@ if(is(Dest == FileHandle) || (isArray!Dest && is(ArrayTarget!Dest == char)) || (
         {
             pragma(inline, true);
             printFile(dest, t);
+            bytesWritten += t.length;
         }
 
-        template formatPolicy(string name)
+        void formatPolicy(U)(ref U val)
         {
-            enum formatPolicy = "formatArg(" ~ name ~ ", spec, dest);";
+            pragma(inline, true);
+            bytesWritten += formatArg(val, spec, dest);
         }
     }
     else static if(isOutputRange!(Dest, char) && !isArray!Dest)
@@ -123,11 +123,13 @@ if(is(Dest == FileHandle) || (isArray!Dest && is(ArrayTarget!Dest == char)) || (
         {
             pragma(inline, true)
             dest.put(t);
+            bytesWritten += t.length;
         }
-        
-        template formatPolicy(string name)
+
+        void formatPolicy(U)(ref U val)
         {
-            enum formatPolicy = "formatArg(" ~ name ~ ", spec, dest);";
+            pragma(inline, true);
+            bytesWritten += formatArg(val, spec, dest);
         }
     }
     else
@@ -138,13 +140,14 @@ if(is(Dest == FileHandle) || (isArray!Dest && is(ArrayTarget!Dest == char)) || (
             bytesWritten += safeCopy(dest[bytesWritten .. $], t);
         }
 
-        template formatPolicy(string name)
+        void formatPolicy(U)(ref U val)
         {
-            enum formatPolicy = "bytesWritten += formatArg(" ~ name ~ ", spec, dest[bytesWritten .. $]);";
+            pragma(inline, true);
+            bytesWritten += formatArg(val, spec, dest[bytesWritten .. $]);
         }
     }
 
-    static if (is(Unqual!T == enum))
+    static if (is(T == enum))
     {
         static foreach (i, member; EnumMembers!T)
         {
@@ -154,7 +157,7 @@ if(is(Dest == FileHandle) || (isArray!Dest && is(ArrayTarget!Dest == char)) || (
             }
         }
     }
-    else static if(is(Unqual!T == bool))
+    else static if(is(T == bool))
     {
         if(t)
         {
@@ -171,12 +174,12 @@ if(is(Dest == FileHandle) || (isArray!Dest && is(ArrayTarget!Dest == char)) || (
         auto result = intToString(intBuffer, t, 10, spec);
         outPolicy(result);
     }
-    else static if (is(Unqual!T == char))
+    else static if (is(T == char))
     {
         char[1] temp = t;
         outPolicy(temp);
     }
-    else static if (is(Unqual!T == float) || is(Unqual!T == double))
+    else static if (is(T == float) || is(T == double))
     {
         char[512] buffer;
         auto result = formatDouble(buffer, t);
@@ -202,7 +205,7 @@ if(is(Dest == FileHandle) || (isArray!Dest && is(ArrayTarget!Dest == char)) || (
         {
             if(t[i] == '\0')
             {
-                endIndex = i; 
+                endIndex = i;
                 break;
             }
         }
@@ -217,32 +220,31 @@ if(is(Dest == FileHandle) || (isArray!Dest && is(ArrayTarget!Dest == char)) || (
         foreach(ref v; t)
         {
             if(i > 0) outPolicy(", ");
-            mixin(formatPolicy!`v`);        
+            formatPolicy(v);
             i++;
         }
         outPolicy("]");
     }
-    else static if(is(Unqual!T == struct))
+    else static if(is(T == struct))
     {
         outPolicy("(");
-        
+
         auto members = t.tupleof;
-        static foreach(i, member; members)
-        {{
-            enum highestOffset = getHighestOffset!(T, i);
-            static if(highestOffset == 0 || t.tupleof[i].offsetof > highestOffset)
+        foreach(i, member; members)
+        {
+            static if(i == 0 || t.tupleof[i].offsetof > getHighestOffsetUntil!(T, i))
             {
                 static if(i > 0) outPolicy(", ");
-                
+
                 enum surroundWithQuotes = useQuotes!(typeof(member));
                 static if(surroundWithQuotes) outPolicy("\"");
-                mixin(formatPolicy!`member`);
+                formatPolicy(member);
                 static if(surroundWithQuotes) outPolicy("\"");
             }
-        }}
+        }
         outPolicy(")");
     }
-    else static if(is(Unqual!T == union))
+    else static if(is(T == union))
     {
         alias taggedToPrintMembers = getSymbolsByUDA!(T, ToPrint);
         static if (taggedToPrintMembers.length > 0)
@@ -252,7 +254,7 @@ if(is(Dest == FileHandle) || (isArray!Dest && is(ArrayTarget!Dest == char)) || (
             {{
                 enum surroundWithQuotes = useQuotes!(typeof(member));
                 static if(surroundWithQuotes) outPolicy("\"");
-                mixin(formatPolicy!`t.tupleof[i]`);
+                formatPolicy(t.tupleof[i]);
                 static if(surroundWithQuotes) outPolicy("\"");
                 static if (i < taggedToPrintMembers.length - 1) outPolicy(", ");
             }}
@@ -268,30 +270,29 @@ if(is(Dest == FileHandle) || (isArray!Dest && is(ArrayTarget!Dest == char)) || (
                     {
                         enum surroundWithQuotes = useQuotes!(typeof(m));
                         static if(surroundWithQuotes) outPolicy("\"");
-                        mixin(formatPolicy!`t.tupleof[i]`);
+                        formatPolicy(t.tupleof[i]);
                         static if(surroundWithQuotes) outPolicy("\"");
                     } break outer;
                 }
-            
+
                 default: assert(0, "Invalid toPrintIndex value."); break outer;
             }
         }
         else
         {
             outPolicy("(");
-            static foreach(i, member; T.tupleof)
-            {{
-                enum highestOffset = getHighestOffset!(T, i);
-                static if(highestOffset == 0 || t.tupleof[i].offsetof > highestOffset)
+            foreach(i, member; t.tupleof)
+            {
+                static if(i == 0 || t.tupleof[i].offsetof > getHighestOffsetUntil!(T, i))
                 {
                     static if(i > 0) outPolicy(", ");
-                    
+
                     enum surroundWithQuotes = useQuotes!(typeof(member));
                     static if(surroundWithQuotes) outPolicy("\"");
-                    mixin(formatPolicy!`t.tupleof[i]`);
+                    formatPolicy(t.tupleof[i]);
                     static if(surroundWithQuotes) outPolicy("\"");
                 }
-            }}
+            }
             outPolicy(")");
         }
     }
@@ -301,7 +302,7 @@ if(is(Dest == FileHandle) || (isArray!Dest && is(ArrayTarget!Dest == char)) || (
 
         foreach(i; 0 .. t.length)
         {
-            mixin(formatPolicy!`t[i]`);
+            formatPolicy(t[i]);
             if (i < t.length - 1)
             {
                 outPolicy(", ");
@@ -359,7 +360,7 @@ FormatSpec getFormatSpec(in char[] command)
         argIndex += (c - '0') * (10 ^^ place);
         place++;
     }
-    
+
     result.argIndex = argIndex;
 
     return result;
@@ -369,7 +370,7 @@ size_t safeCopy(char[] dest, inout(char)[] source)
 {
     size_t bytesToCopy = void;
     bool truncated = false;
-    
+
     if(dest.length < source.length)
     {
         bytesToCopy = dest.length;
@@ -379,7 +380,7 @@ size_t safeCopy(char[] dest, inout(char)[] source)
     {
         bytesToCopy = source.length;
     }
-    
+
     static if (assertOnTruncation) assert(!truncated);
 
     dest[0 .. bytesToCopy] = source[0 .. bytesToCopy];
@@ -460,7 +461,7 @@ enum printCommon = `
                 fmtCopyToBufferIndex = fmtCursor;
             }
             else
-            {            
+            {
                 mixin(outputPolicy);
 
                 fmtCursor++;
@@ -592,7 +593,7 @@ void printOut(inout(char)[] msg)
     {
         FileHandle file = stdOut;
     }
-    
+
     printFile(file, msg);
 }
 
@@ -606,7 +607,7 @@ void printErr(inout(char)[] msg)
     {
         FileHandle file = stdErr;
     }
-    
+
     printFile(file, msg);
 }
 
@@ -656,10 +657,10 @@ char[] formatDouble(return ref char[512] buf, double fv)
     char[512] num = 0;
     stbsp__uint32 l, n, cs; // l == length
     stbsp__uint64 n64;
-    
+
     stbsp__int32 fw, pr, tz; // pr == precision?
     stbsp__uint32 fl;
-    
+
     stbsp__int32 dp; // decimal position
 
     char[8] tail = 0;
@@ -667,7 +668,7 @@ char[] formatDouble(return ref char[512] buf, double fv)
     char* s;
     char *sn;
     char* bf = buf.ptr;
-    
+
     void stbsp__cb_buf_clamp(T, U)(ref T cl, ref U v) {
         pragma(inline, true);
          cl = v;
@@ -677,7 +678,7 @@ char[] formatDouble(return ref char[512] buf, double fv)
                cl = lg;                                 \
          }*/
     }
-    
+
     void stbsp__chk_cb_buf(size_t bytes){
         /*if (callback) {               \
            stbsp__chk_cb_bufL(bytes); \
@@ -688,16 +689,16 @@ char[] formatDouble(return ref char[512] buf, double fv)
     // read the double into a string
     if (stbsp__real_to_str(&sn, &l, num.ptr, &dp, fv, pr))
         fl |= STBSP__NEGATIVE;
-        
+
     stbsp__lead_sign(fl, lead.ptr);
-    
+
     if (dp == STBSP__SPECIAL) {
         s = cast(char *)sn;
         cs = 0;
         pr = 0;
     }
     else
-    {        
+    {
         s = num.ptr + 64;
 
          // handle the three decimal varieties
@@ -811,7 +812,7 @@ char[] formatDouble(return ref char[512] buf, double fv)
 
          // get the length that we copied
          l = cast(stbsp__uint32)(s - (num.ptr + 64));
-         s = num.ptr + 64;    
+         s = num.ptr + 64;
     }
 
          // get fw=leading/trailing space, pr=leading zeros
@@ -999,7 +1000,7 @@ char[] formatDouble(return ref char[512] buf, double fv)
                   stbsp__chk_cb_buf(1);
                }
             }
-         
+
     return buf[0 .. bf - buf.ptr];
 }
 
