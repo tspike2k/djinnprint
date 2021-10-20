@@ -9,8 +9,6 @@
 // - Better handling of structs with anonymous union members (see format() in Phobos and search for `#{overlap`).
 
 // - Add formatting options for variables (commas for integers, hex output, padding, etc.)
-//   Additionally, there should be an option to print the name of each struct type before the value of its members. This could be useful in code generation.
-//   For instance, printing `Vect2(1.0000f, 1.0000f)` would be useful for this case rather than `(1.0000, 1.000)`, the latter of which is the default behavior.
 
 // NOTE: The order of members returned by __traits(allMembers) is not guaranteed to be in the order they appear in the struct definition.
 // However, it SEEMS that the .tupleof property is expected (perhaps even required) to be ordered this way. This behavior appears to be expected by
@@ -26,8 +24,9 @@ enum ToPrint;
 private @nogc nothrow:
 
 // Library configuration options:
-enum assertOnTruncation     = false; // Trigger an assertion when formatting to a buffer results in a string larger than the buffer size
-enum use_cstdio             = true; // Use the standard C library output functions when printing to the console
+enum outputStructAndUnionNames = false;
+enum assertOnTruncation        = false; // Trigger an assertion when formatting to a buffer results in a string larger than the buffer size
+enum use_cstdio                = true;  // Use the standard C library output functions when printing to the console
 
 import std.traits;
 import std.range;
@@ -171,7 +170,7 @@ if(is(Dest == FileHandle) || (isArray!Dest && is(ArrayTarget!Dest == char)) || (
     else static if (isIntegral!T)
     {
         char[30] intBuffer;
-        auto result = intToString(intBuffer, t, 10, spec);
+        auto result = intToString(intBuffer, t, spec.base, spec);
         outPolicy(result);
     }
     else static if (is(T == char))
@@ -227,6 +226,7 @@ if(is(Dest == FileHandle) || (isArray!Dest && is(ArrayTarget!Dest == char)) || (
     }
     else static if(is(T == struct))
     {
+        static if(outputStructAndUnionNames) outPolicy(T.stringof);
         outPolicy("(");
 
         auto members = t.tupleof;
@@ -249,6 +249,7 @@ if(is(Dest == FileHandle) || (isArray!Dest && is(ArrayTarget!Dest == char)) || (
         alias taggedToPrintMembers = getSymbolsByUDA!(T, ToPrint);
         static if (taggedToPrintMembers.length > 0)
         {
+            static if(outputStructAndUnionNames) outPolicy(T.stringof);
             outPolicy("(");
             static foreach(i, member; taggedToPrintMembers)
             {{
@@ -280,6 +281,7 @@ if(is(Dest == FileHandle) || (isArray!Dest && is(ArrayTarget!Dest == char)) || (
         }
         else
         {
+            static if (outputStructAndUnionNames) outPolicy(T.stringof);
             outPolicy("(");
             foreach(i, member; t.tupleof)
             {
@@ -326,33 +328,36 @@ if(is(Dest == FileHandle) || (isArray!Dest && is(ArrayTarget!Dest == char)) || (
     return bytesWritten;
 }
 
-struct FormatSpec
-{
-   // TODO: More format specifiers, such as 'h' for hex.
-    uint argIndex;
-}
-
 bool isDigit(char c)
 {
     return (c >= '0') && (c <= '9');
 }
 
-FormatSpec getFormatSpec(in char[] command)
+struct FormatSpec
+{
+    uint argIndex;
+
+    // TODO: Use bit-flags for this sort of thing?
+    ubyte base = 10;
+
+    bool showCommas = false;
+}
+
+FormatSpec getFormatSpec(in char[] sourceCommand)
 {
     FormatSpec result;
-    assert(isDigit(command[0]), "Format command must start with numeric argument index.");
+    assert(isDigit(sourceCommand[0]), "Format command must start with numeric argument index.");
 
-    size_t end = 0;
-    foreach(i, _; command)
+    auto argIndexStr = sourceCommand[];
+    foreach(i, _; sourceCommand)
     {
-        end++;
-        if (!isDigit(command[i]))
+        if (!isDigit(sourceCommand[i]))
         {
+            argIndexStr = sourceCommand[0 .. i];
             break;
         }
     }
 
-    auto argIndexStr = command[0 .. end];
     uint argIndex = 0;
     uint place = 0;
     foreach_reverse(ref c; argIndexStr)
@@ -362,6 +367,29 @@ FormatSpec getFormatSpec(in char[] command)
     }
 
     result.argIndex = argIndex;
+    auto miscCommands = sourceCommand[argIndexStr.length .. $];
+    foreach(c; miscCommands)
+    {
+        switch(c)
+        {
+            case 'h': result.base = 16; break;
+            case ',': result.showCommas = true; break;
+
+            default: break;
+        }
+    }
+
+    /+ TODO: What are some format specifiers we would like to have?
+        Left padding with zeroes or spaces? (sn and zn). We COULD have padding be a command letter (like l) followed by the character to fill and then the number to pad with.
+        Precision (pn)
+        Show the sign when positive (+)
+        Hex floats (h)
+        e notation for floats (e)
+
+        We could end up with format specifiers that look like this (but maybe that's fine):
+        {1hl.8p4+,}
+        {4l 8p2,} <- This one could potentially be a common thing you would do
+    +/
 
     return result;
 }
@@ -399,14 +427,23 @@ if(isIntegral!T)
         n = abs(n); // NOTE: Strip off the sign to prevent the mod operator from giving us a negative array index.
     }
 
-    size_t finish = buffer.length;
-
-    foreach_reverse(place; 0..finish)
+    size_t bufferFill = buffer.length;
+    size_t place = bufferFill;
+    size_t loops = 0;
+    while(true)
     {
-        buffer[place] = intToCharTable[n % base];
+        if(place == 0) break;
+        place--;
+        loops++;
+
+        auto c = intToCharTable[n % base];
+        buffer[place] = c;
         n /= base;
 
-        // TODO: Add commas in the conversion string?
+        if (spec.showCommas && loops % 3 == 0)
+        {
+            buffer[--place] = ',';
+        }
 
         if(n == 0)
         {
@@ -414,8 +451,7 @@ if(isIntegral!T)
             {
                 if (sign < 0 && place > 0)
                 {
-                    place--;
-                    buffer[place] = '-';
+                    buffer[--place] = '-';
                 }
             }
 
@@ -425,24 +461,13 @@ if(isIntegral!T)
                 buffer[--place] = '0';
             }
 
-            finish = place;
+            bufferFill = place;
             break;
         }
     }
 
-    size_t charsWritten = buffer.length - finish;
-    size_t minToCopy = void;
-    if(charsWritten < buffer.length)
-    {
-        minToCopy = charsWritten;
-    }
-    else
-    {
-        static if(assertOnTruncation) assert(0, "ERR: buffer truncated.");
-        minToCopy = buffer.length;
-    }
 
-    return buffer[finish..finish+minToCopy];
+    return buffer[bufferFill .. $];
 }
 
 enum printCommon = `

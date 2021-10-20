@@ -86,10 +86,10 @@ void formatExamples()
     const(char)[] msg = "Hello, world!";
     float f = -32.0f;
     printOut(format(formatString, buffer, 2, msg, f));
-    
+
     char[39] mutableFormatString = "We can use mutable format strings: {0}\n";
     printOut(format(mutableFormatString, buffer, msg));
-    
+
     char testChar = 'T';
     printOut(format("We can print chars: {0}\n", buffer, testChar));
 
@@ -140,9 +140,9 @@ void formatOutExamples()
     formatOut(formatString, 2, msg, f);
 
     char[39] mutableFormatString = "We can use mutable format strings: {0}\n";
-    
+
     formatOut(mutableFormatString, msg);
-    
+
     char testChar = 'T';
     formatOut("We can print chars: {0}\n", testChar);
 
@@ -214,7 +214,7 @@ union Entity
     Entity_Common common;
     Entity_Player player;
     Entity_Door   door;
-    
+
     @nogc nothrow size_t toPrintIndex()
     {
         return cast(size_t)(common.type);
@@ -236,7 +236,7 @@ struct AnonUnion
         char[512] name;
         int id;
     };
-    
+
     double t;
 }
 
@@ -273,22 +273,22 @@ struct BufferRange
 {
     char[2048] e;
     uint count;
-    
+
     nothrow @nogc:
-    
+
     void put(in char[] c)
     {
         auto bytesLeft = e.length - count;
         auto toWrite = c.length > bytesLeft ? bytesLeft : c.length;
         e[count .. count+toWrite] = c[0 .. toWrite];
-        count += toWrite;  
+        count += toWrite;
     }
-    
+
     auto opSlice(int start, int end)
     {
         return e[start..end];
     }
-    
+
     uint opDollar() { return count; }
 }
 
@@ -296,7 +296,7 @@ void rangeExamples()
 {
     import std.range;
     import std.algorithm;
-    
+
     printOut("\n\n----Range examples----\n");
     int a, b, c;
     a = 1;
@@ -305,7 +305,7 @@ void rangeExamples()
     BufferRange range;
     format("The numbers are {0}, {1}, {2}", range, a, b, c);
     formatOut("OutputRange: {0}\n", range[0..$]);
-    
+
     auto r = iota(7) // Generates numbers in the range of [0 .. 7)
             .cycle    // Infinitely repeates a given range
             .take(16) // Takes a given number of elements off an infinite range
@@ -313,6 +313,13 @@ void rangeExamples()
             .filter!(a => a % 2 == 0); // Filter out odd numbers from the given range
 
     formatOut("InputRange: {0}\n", r);
+}
+
+void formatOptionsExamples()
+{
+    formatOut("Hex version of number {0}: {1h}\n", 255, 255);
+
+    formatOut("With commas: {0,}\n", long.min+1); // TODO: for some reason, std.math.abs doesn't work correctly when passing in long.min. Perhaps this is a bug in Phobos? Ask in the forums. Or, better yet, read the source.
 }
 
 extern(C) int main()
@@ -324,6 +331,8 @@ extern(C) int main()
     unionExamples();
 
     rangeExamples();
+
+    formatOptionsExamples;
 
     return 0;
 }
