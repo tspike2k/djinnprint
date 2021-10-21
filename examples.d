@@ -325,6 +325,11 @@ void formatOptionsExamples()
     formatOut("{0X+}\n", 1);
     formatOut("{0+}\n", -249);
 
+    formatOut("{0E}\n", 123.456789);
+    import core.stdc.stdio;
+    printf("%E\n", 123.456789);
+
+
     formatOut("With commas: {0,}\n", long.min+1); // TODO: for some reason, std.math.abs doesn't work correctly when passing in long.min. Perhaps this is a bug in Phobos? Ask in the forums. Or, better yet, read the source.
 }
 

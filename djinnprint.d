@@ -67,8 +67,8 @@ else
     }
 }
 
-immutable char[] intToCharTableLower = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f'];
-immutable char[] intToCharTableUpper = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 'C', 'D', 'E', 'F'];
+immutable char[] intToCharTableLower = "0123456789abcdefxp";
+immutable char[] intToCharTableUpper = "0123456789ABCDEFXP";
 
 size_t length(const(char*) s)
 {
@@ -171,7 +171,7 @@ if(is(Dest == FileHandle) || (isArray!Dest && is(ArrayTarget!Dest == char)) || (
     else static if (isIntegral!T)
     {
         char[30] intBuffer;
-        auto result = intToString(intBuffer, t, spec.flags, spec.precision);
+        auto result = intToString(intBuffer, t, spec.flags, (spec.flags & FmtFlag.Precision) ? spec.precision : 0);
         outPolicy(result);
     }
     else static if (is(T == char))
@@ -182,7 +182,7 @@ if(is(Dest == FileHandle) || (isArray!Dest && is(ArrayTarget!Dest == char)) || (
     else static if (is(T == float) || is(T == double))
     {
         char[512] buffer;
-        auto result = doubleToString(buffer, t, spec.flags, spec.precision);
+        auto result = doubleToString(buffer, t, spec.flags, (spec.flags & FmtFlag.Precision) ? spec.precision : 6);
         static if(is(Dest == FileHandle))
         {
             printFile(dest, result);
@@ -336,49 +336,46 @@ bool isDigit(char c)
 
 enum FmtFlag : ubyte
 {
-    None    = 0,
-    Hex     = 1 << 0,
-    HexUp   = 1 << 1,
-    Comma   = 1 << 2,
-    ENot    = 1 << 3,
-    ENotUp  = 1 << 4,
-    Sign    = 1 << 5,
+    None      = 0,
+    Hex       = 1 << 0,
+    HexUp     = 1 << 1,
+    Comma     = 1 << 2,
+    ENot      = 1 << 3,
+    ENotUp    = 1 << 4,
+    Sign      = 1 << 5,
+    Precision = 1 << 6,
 }
 
 struct FormatSpec
 {
-    uint argIndex;
-
-    FmtFlag flags = FmtFlag.None;
-    ubyte precision = 0;
+    FmtFlag flags;
+    ubyte precision;
 }
 
-FormatSpec getFormatSpec(in char[] sourceCommand)
+uint eatAndReturnArgIndex(ref inout(char)[] commandStr)
 {
-    FormatSpec result;
-    assert(isDigit(sourceCommand[0]), "Format command must start with numeric argument index.");
-
-    auto argIndexStr = sourceCommand[];
-    foreach(i, _; sourceCommand)
+    assert(isDigit(commandStr[0]), "Format command must start with numeric argument index.");
+    uint argIndex = 0;
+    size_t end = commandStr.length;
+    foreach(i, c; commandStr)
     {
-        if (!isDigit(sourceCommand[i]))
+        if(!isDigit(c))
         {
-            argIndexStr = sourceCommand[0 .. i];
+            end = i;
             break;
         }
+        argIndex += (c - '0') * (10 ^^ i);
     }
 
-    uint argIndex = 0;
-    uint place = 0;
-    foreach_reverse(ref c; argIndexStr)
-    {
-        argIndex += (c - '0') * (10 ^^ place);
-        place++;
-    }
+    commandStr = commandStr[end .. $];
+    return argIndex;
+}
 
-    result.argIndex = argIndex;
-    auto miscCommands = sourceCommand[argIndexStr.length .. $];
-    foreach(c; miscCommands)
+FormatSpec getFormatSpec(in char[] commandStr)
+{
+    FormatSpec result;
+
+    foreach(c; commandStr)
     {
         switch(c)
         {
@@ -393,6 +390,12 @@ FormatSpec getFormatSpec(in char[] sourceCommand)
             case ',': result.flags |= FmtFlag.Comma; break;
 
             case '+': result.flags |= FmtFlag.Sign; break;
+
+            case 'p':
+            {
+                // TODO: Read the precision number from the command!
+                result.flags |= FmtFlag.Precision;
+            } break;
 
             default: assert(0, "Unrecognized format specifier"); break;
         }
@@ -572,11 +575,12 @@ enum printCommon = `
 
                 auto formatCommand = fmt[commandStart .. commandEnd];
 
+                auto argIndex = eatAndReturnArgIndex(formatCommand);
+                assert(argIndex < args.length, "ERR: Format index exceeds length of provided arguments.");
                 auto formatSpec = getFormatSpec(formatCommand);
-                assert(formatSpec.argIndex < args.length, "ERR: Format index exceeds length of provided arguments.");
 
                 // NOTE: Variadic template argument indexing based on std.format.getNth(...) from Phobos.
-                outer: switch(formatSpec.argIndex)
+                outer: switch(argIndex)
                 {
                     static foreach(i, _; Args)
                     {
@@ -741,7 +745,7 @@ private:
 //
 ////
 
-char[] doubleToString(return ref char[512] buf, double fv, FmtFlag flags = FmtFlag.None, ubyte precision = 0)
+char[] doubleToString(return ref char[512] buf, double fv, FmtFlag flags = FmtFlag.None, ubyte precision = 6)
 {
     //char const *h;
     char[512] num = 0;
@@ -775,134 +779,194 @@ char[] doubleToString(return ref char[512] buf, double fv, FmtFlag flags = FmtFl
         } */
     }
 
-    pr = precision == 0 ? 6 : precision; // default is 6
-    // read the double into a string
-    if (stbsp__real_to_str(&sn, &l, num.ptr, &dp, fv, pr))
-        fl |= STBSP__NEGATIVE;
+    if((flags & FmtFlag.Hex) || (flags & FmtFlag.HexUp)) // NOTE: Hex float formatting
+    {
+        assert(0);
+    }
+    else if((flags & FmtFlag.ENot) || (flags & FmtFlag.ENotUp)) // NOTE: Scientific notation
+    {
+        auto h = (flags & FmtFlag.ENotUp) ? intToCharTableUpper : intToCharTableLower;
+        pr = precision;
+        // read the double into a string
+        if (stbsp__real_to_str(&sn, &l, num.ptr, &dp, fv, pr | 0x80000000))
+            fl |= STBSP__NEGATIVE;
+doexpfromg:
+        tail[0] = 0;
+        stbsp__lead_sign(fl, lead.ptr);
+        if (dp == STBSP__SPECIAL) {
+            s = cast(char*)sn;
+            cs = 0;
+            pr = 0;
+            goto scopy;
+        }
+        s = num.ptr + 64;
+        // handle leading chars
+        *s++ = sn[0];
 
-    stbsp__lead_sign(fl, lead.ptr);
+        if (pr)
+            *s++ = stbsp__period;
 
-    if (dp == STBSP__SPECIAL) {
-        s = cast(char *)sn;
-        cs = 0;
+        // handle after decimal
+        if ((l - 1) > cast(stbsp__uint32)pr)
+            l = pr + 1;
+        for (n = 1; n < l; n++)
+            *s++ = sn[n];
+        // trailing zeros
+        tz = pr - (l - 1);
         pr = 0;
+        // dump expo
+        tail[1] = h[0xe];
+        dp -= 1;
+        if (dp < 0) {
+            tail[2] = '-';
+            dp = -dp;
+        } else
+            tail[2] = '+';
+        n = (dp >= 100) ? 5 : 4;
+        tail[0] = cast(char)n;
+        for (;;) {
+            tail[n] = '0' + dp % 10;
+            if (n <= 3)
+               break;
+            --n;
+            dp /= 10;
+        }
+        cs = 1 + (3 << 24); // how many tens
+        goto flt_lead;
+    }
+    else // NOTE: Regular float formatting
+    {
+        pr = precision;
+        // read the double into a string
+        if (stbsp__real_to_str(&sn, &l, num.ptr, &dp, fv, pr))
+            fl |= STBSP__NEGATIVE;
+
+        stbsp__lead_sign(fl, lead.ptr);
+
+        if (dp == STBSP__SPECIAL) {
+            s = cast(char *)sn;
+            cs = 0;
+            pr = 0;
+            goto scopy;
+        }
+
+        s = num.ptr + 64;
+
+        // handle the three decimal varieties
+        if (dp <= 0) {
+            stbsp__int32 i;
+            // handle 0.000*000xxxx
+            *s++ = '0';
+            if (pr)
+               *s++ = stbsp__period;
+            n = -dp;
+            if (cast(stbsp__int32)n > pr)
+               n = pr;
+            i = n;
+            while (i) {
+               if (((cast(stbsp__uintptr)s) & 3) == 0)
+                  break;
+               *s++ = '0';
+               --i;
+            }
+            while (i >= 4) {
+               *(cast(stbsp__uint32 *)s) = 0x30303030;
+               s += 4;
+               i -= 4;
+            }
+            while (i) {
+               *s++ = '0';
+               --i;
+            }
+            if (cast(stbsp__int32)(l + n) > pr)
+               l = pr - n;
+            i = l;
+            while (i) {
+               *s++ = *sn++;
+               --i;
+            }
+            tz = pr - (n + l);
+            cs = 1 + (3 << 24); // how many tens did we write (for commas below)
+        } else {
+            cs = (fl & STBSP__TRIPLET_COMMA) ? ((600 - cast(stbsp__uint32)dp) % 3) : 0;
+            if (cast(stbsp__uint32)dp >= l) {
+               // handle xxxx000*000.0
+               n = 0;
+               for (;;) {
+                  if ((fl & STBSP__TRIPLET_COMMA) && (++cs == 4)) {
+                     cs = 0;
+                     *s++ = stbsp__comma;
+                  } else {
+                     *s++ = sn[n];
+                     ++n;
+                     if (n >= l)
+                        break;
+                  }
+               }
+               if (n < cast(stbsp__uint32)dp) {
+                  n = dp - n;
+                  if ((fl & STBSP__TRIPLET_COMMA) == 0) {
+                     while (n) {
+                        if (((cast(stbsp__uintptr)s) & 3) == 0)
+                           break;
+                        *s++ = '0';
+                        --n;
+                     }
+                     while (n >= 4) {
+                        *(cast(stbsp__uint32 *)s) = 0x30303030;
+                        s += 4;
+                        n -= 4;
+                     }
+                  }
+                  while (n) {
+                     if ((fl & STBSP__TRIPLET_COMMA) && (++cs == 4)) {
+                        cs = 0;
+                        *s++ = stbsp__comma;
+                     } else {
+                        *s++ = '0';
+                        --n;
+                     }
+                  }
+               }
+               cs = cast(int)(s - (num.ptr + 64)) + (3 << 24); // cs is how many tens
+               if (pr) {
+                  *s++ = stbsp__period;
+                  tz = pr;
+               }
+            } else {
+               // handle xxxxx.xxxx000*000
+               n = 0;
+               for (;;) {
+                  if ((fl & STBSP__TRIPLET_COMMA) && (++cs == 4)) {
+                     cs = 0;
+                     *s++ = stbsp__comma;
+                  } else {
+                     *s++ = sn[n];
+                     ++n;
+                     if (n >= cast(stbsp__uint32)dp)
+                        break;
+                  }
+               }
+               cs = cast(int)(s - (num.ptr + 64)) + (3 << 24); // cs is how many tens
+               if (pr)
+                  *s++ = stbsp__period;
+               if ((l - dp) > cast(stbsp__uint32)pr)
+                  l = pr + dp;
+               while (n < l) {
+                  *s++ = sn[n];
+                  ++n;
+               }
+               tz = pr - (l - dp);
+            }
+        }
+        pr = 0;
+
+flt_lead:
+        // get the length that we copied
+        l = cast(stbsp__uint32)(s - (num.ptr + 64));
+        s = num.ptr + 64;
         goto scopy;
     }
-
-    s = num.ptr + 64;
-
-    // handle the three decimal varieties
-    if (dp <= 0) {
-        stbsp__int32 i;
-        // handle 0.000*000xxxx
-        *s++ = '0';
-        if (pr)
-           *s++ = stbsp__period;
-        n = -dp;
-        if (cast(stbsp__int32)n > pr)
-           n = pr;
-        i = n;
-        while (i) {
-           if (((cast(stbsp__uintptr)s) & 3) == 0)
-              break;
-           *s++ = '0';
-           --i;
-        }
-        while (i >= 4) {
-           *(cast(stbsp__uint32 *)s) = 0x30303030;
-           s += 4;
-           i -= 4;
-        }
-        while (i) {
-           *s++ = '0';
-           --i;
-        }
-        if (cast(stbsp__int32)(l + n) > pr)
-           l = pr - n;
-        i = l;
-        while (i) {
-           *s++ = *sn++;
-           --i;
-        }
-        tz = pr - (n + l);
-        cs = 1 + (3 << 24); // how many tens did we write (for commas below)
-    } else {
-        cs = (fl & STBSP__TRIPLET_COMMA) ? ((600 - cast(stbsp__uint32)dp) % 3) : 0;
-        if (cast(stbsp__uint32)dp >= l) {
-           // handle xxxx000*000.0
-           n = 0;
-           for (;;) {
-              if ((fl & STBSP__TRIPLET_COMMA) && (++cs == 4)) {
-                 cs = 0;
-                 *s++ = stbsp__comma;
-              } else {
-                 *s++ = sn[n];
-                 ++n;
-                 if (n >= l)
-                    break;
-              }
-           }
-           if (n < cast(stbsp__uint32)dp) {
-              n = dp - n;
-              if ((fl & STBSP__TRIPLET_COMMA) == 0) {
-                 while (n) {
-                    if (((cast(stbsp__uintptr)s) & 3) == 0)
-                       break;
-                    *s++ = '0';
-                    --n;
-                 }
-                 while (n >= 4) {
-                    *(cast(stbsp__uint32 *)s) = 0x30303030;
-                    s += 4;
-                    n -= 4;
-                 }
-              }
-              while (n) {
-                 if ((fl & STBSP__TRIPLET_COMMA) && (++cs == 4)) {
-                    cs = 0;
-                    *s++ = stbsp__comma;
-                 } else {
-                    *s++ = '0';
-                    --n;
-                 }
-              }
-           }
-           cs = cast(int)(s - (num.ptr + 64)) + (3 << 24); // cs is how many tens
-           if (pr) {
-              *s++ = stbsp__period;
-              tz = pr;
-           }
-        } else {
-           // handle xxxxx.xxxx000*000
-           n = 0;
-           for (;;) {
-              if ((fl & STBSP__TRIPLET_COMMA) && (++cs == 4)) {
-                 cs = 0;
-                 *s++ = stbsp__comma;
-              } else {
-                 *s++ = sn[n];
-                 ++n;
-                 if (n >= cast(stbsp__uint32)dp)
-                    break;
-              }
-           }
-           cs = cast(int)(s - (num.ptr + 64)) + (3 << 24); // cs is how many tens
-           if (pr)
-              *s++ = stbsp__period;
-           if ((l - dp) > cast(stbsp__uint32)pr)
-              l = pr + dp;
-           while (n < l) {
-              *s++ = sn[n];
-              ++n;
-           }
-           tz = pr - (l - dp);
-        }
-    }
-    pr = 0;
-
-    // get the length that we copied
-    l = cast(stbsp__uint32)(s - (num.ptr + 64));
-    s = num.ptr + 64;
 
 scopy:
         // get fw=leading/trailing space, pr=leading zeros
