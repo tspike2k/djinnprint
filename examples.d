@@ -320,17 +320,20 @@ void formatOptionsExamples()
     formatOut("Hex version of number {0}: {1x}\n", 255, 255);
     formatOut("Hex (uppercase) version of number {0}: {1X}\n", 255, 255);
 
-    formatOut("{0}\n", 1);
-    formatOut("{0+}\n", 1);
-    formatOut("{0X+}\n", 1);
+    formatOut("{0p3}\n", 1);
+    formatOut("{0p3+}\n", 1);
+    formatOut("{0Xp3+}\n", 1);
     formatOut("{0+}\n", -249);
 
     formatOut("{0E}\n", 123.456789);
     import core.stdc.stdio;
     printf("%E\n", 123.456789);
 
+    printf("%X\n", 255);
 
-    formatOut("With commas: {0,}\n", long.min+1); // TODO: for some reason, std.math.abs doesn't work correctly when passing in long.min. Perhaps this is a bug in Phobos? Ask in the forums. Or, better yet, read the source.
+    formatOut("{0,+}\n", 1234567.89);
+
+    formatOut("With commas: {0,}\n", long.min+1);
 }
 
 extern(C) int main()

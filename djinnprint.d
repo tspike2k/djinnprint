@@ -10,6 +10,27 @@
 
 // - Add formatting options for variables (commas for integers, hex output, padding, etc.)
 
+/+
+    TODO: Consider exposing the intToString and doubleToString functions. This way, the user can easily extend functionality, such as add padding or the like:
+    const(char)[] paddedInt(T)(const(char)[] buffer, T num, ubyte padding)
+    {
+        const(char)[] result = void;
+        char[30] intBuffer = void;
+        auto intAsStr = intToString(intBuffer, num);
+        if(intAsStr.length < padding)
+        {
+            auto toPad = padding - intAsStr.length;
+            buffer[0 .. toPad] = ' ';
+            result = buffer[0 .. intAsStr.length + toPad]
+        }
+        else
+        {
+            result = intAsStr[];
+        }
+        return result;
+    }
++/
+
 // NOTE: The order of members returned by __traits(allMembers) is not guaranteed to be in the order they appear in the struct definition.
 // However, it SEEMS that the .tupleof property is expected (perhaps even required) to be ordered this way. This behavior appears to be expected by
 // some code in Phobos, so we'll rely on this behavior. Should this break in the future, we're going to have to make some changes.
@@ -375,63 +396,59 @@ FormatSpec getFormatSpec(in char[] commandStr)
 {
     FormatSpec result;
 
-    foreach(c; commandStr)
+    const(char)* place = commandStr.ptr;
+    const(char)* end   = commandStr.ptr + commandStr.length;
+    while(place < end)
     {
-        switch(c)
+        switch(*place)
         {
-            case 'x': result.flags |= FmtFlag.Hex; break;
+            case 'x':
+                result.flags |= FmtFlag.Hex;
+                place++;
+                break;
 
-            case 'X': result.flags |= FmtFlag.HexUp; break;
+            case 'X':
+                result.flags |= FmtFlag.HexUp;
+                place++;
+                break;
 
-            case 'e': result.flags |= FmtFlag.ENot; break;
+            case 'e':
+                result.flags |= FmtFlag.ENot;
+                place++;
+                break;
 
-            case 'E': result.flags |= FmtFlag.ENotUp; break;
+            case 'E':
+                result.flags |= FmtFlag.ENotUp;
+                place++;
+                break;
 
-            case ',': result.flags |= FmtFlag.Comma; break;
+            case ',':
+                result.flags |= FmtFlag.Comma;
+                place++;
+                break;
 
-            case '+': result.flags |= FmtFlag.Sign; break;
+            case '+':
+                result.flags |= FmtFlag.Sign;
+                place++;
+                break;
 
             case 'p':
             {
-                // TODO: Read the precision number from the command!
                 result.flags |= FmtFlag.Precision;
+                place++;
+                assert(isDigit(*place) && place < end, "Number expected after precision token (p) in format specifier.");
+                uint i = 0;
+                while(isDigit(*place) && place < end)
+                {
+                    result.precision += (*place - '0') * (10 ^^ i);
+                    place++;
+                    i++;
+                }
             } break;
 
             default: assert(0, "Unrecognized format specifier"); break;
         }
     }
-
-    /+ TODO: What are some format specifiers we would like to have?
-        Precision (pn)
-        Hex floats (h or x?)
-        e notation for floats (e)
-
-        We should probably have case-specific formatting. For example, x for lower-case hex and X for uppercase.
-        E for uppercase e notation, and e for lowercase
-
-        Consider exposing the intToString and doubleToString functions. This way, the user can easily extend functionality, such as add padding or the like:
-        const(char)[] paddedInt(T)(const(char)[] buffer, T num, ubyte padding)
-        {
-            const(char)[] result = void;
-            char[30] intBuffer = void;
-            auto intAsStr = intToString(intBuffer, num);
-            if(intAsStr.length < padding)
-            {
-                auto toPad = padding - intAsStr.length;
-                buffer[0 .. toPad] = ' ';
-                result = buffer[0 .. intAsStr.length + toPad]
-            }
-            else
-            {
-                result = intAsStr[];
-            }
-            return result;
-        }
-
-        We could end up with format specifiers that look like this (but maybe that's fine):
-        {1hl.8p4+,}
-        {4l 8p2,} <- This one could potentially be a common thing you would do
-    +/
 
     return result;
 }
@@ -763,6 +780,9 @@ char[] doubleToString(return ref char[512] buf, double fv, FmtFlag flags = FmtFl
     char *sn;
     char* bf = buf.ptr;
 
+    if(flags & FmtFlag.Comma) fl |= STBSP__TRIPLET_COMMA;
+    if(flags & FmtFlag.Sign)  fl |= STBSP__LEADINGPLUS;
+
     void stbsp__cb_buf_clamp(T, U)(ref T cl, ref U v) {
         pragma(inline, true);
          cl = v;
@@ -781,7 +801,69 @@ char[] doubleToString(return ref char[512] buf, double fv, FmtFlag flags = FmtFl
 
     if((flags & FmtFlag.Hex) || (flags & FmtFlag.HexUp)) // NOTE: Hex float formatting
     {
-        assert(0);
+        auto h = (flags & FmtFlag.HexUp) ? intToCharTableUpper : intToCharTableLower;
+        pr = precision;
+        // read the double into a string
+        if (stbsp__real_to_parts(cast(stbsp__int64*)&n64, &dp, fv))
+            fl |= STBSP__NEGATIVE;
+
+        s = num.ptr + 64;
+
+        stbsp__lead_sign(fl, lead.ptr);
+
+        if (dp == -1023)
+            dp = (n64) ? -1022 : 0;
+        else
+            n64 |= ((cast(stbsp__uint64)1) << 52);
+        n64 <<= (64 - 56);
+        if (pr < 15)
+            n64 += (((cast(stbsp__uint64)8) << 56) >> (pr * 4));
+// add leading chars
+
+        lead[1 + lead[0]] = '0';
+        lead[2 + lead[0]] = 'x';
+        lead[0] += 2;
+
+        *s++ = h[(n64 >> 60) & 15];
+        n64 <<= 4;
+        if (pr)
+            *s++ = stbsp__period;
+        sn = s;
+
+        // print the bits
+        n = pr;
+        if (n > 13)
+            n = 13;
+        if (pr > cast(stbsp__int32)n)
+            tz = pr - n;
+        pr = 0;
+        while (n--) {
+            *s++ = h[(n64 >> 60) & 15];
+            n64 <<= 4;
+        }
+
+        // print the expo
+        tail[1] = h[17];
+        if (dp < 0) {
+            tail[2] = '-';
+            dp = -dp;
+        } else
+            tail[2] = '+';
+        n = (dp >= 1000) ? 6 : ((dp >= 100) ? 5 : ((dp >= 10) ? 4 : 3));
+        tail[0] = cast(char)n;
+        for (;;) {
+            tail[n] = '0' + dp % 10;
+            if (n <= 3)
+               break;
+            --n;
+            dp /= 10;
+        }
+
+        dp = cast(int)(s - sn);
+        l = cast(int)(s - (num.ptr + 64));
+        s = num.ptr + 64;
+        cs = 1 + (3 << 24);
+        goto scopy;
     }
     else if((flags & FmtFlag.ENot) || (flags & FmtFlag.ENotUp)) // NOTE: Scientific notation
     {
@@ -1171,6 +1253,23 @@ void stbsp__lead_sign(stbsp__uint32 fl, char *sign)
       sign[0] = 1;
       sign[1] = '+';
    }
+}
+
+// get float info
+stbsp__int32 stbsp__real_to_parts(stbsp__int64 *bits, stbsp__int32 *expo, double value)
+{
+   double d;
+   stbsp__int64 b = 0;
+
+   // load value and round at the frac_digits
+   d = value;
+
+   STBSP__COPYFP(b, d);
+
+   *bits = b & (((cast(stbsp__uint64)1) << 52) - 1);
+   *expo = cast(stbsp__int32)(((b >> 52) & 2047) - 1023);
+
+   return cast(stbsp__int32)(cast(stbsp__uint64) b >> 63);
 }
 
 alias stbsp__uint16 = ushort;
