@@ -8,28 +8,7 @@
 
 // - Better handling of structs with anonymous union members (see format() in Phobos and search for `#{overlap`).
 
-// - Add formatting options for variables (commas for integers, hex output, padding, etc.)
-
-/+
-    TODO: Consider exposing the intToString and doubleToString functions. This way, the user can easily extend functionality, such as add padding or the like:
-    const(char)[] paddedInt(T)(const(char)[] buffer, T num, ubyte padding)
-    {
-        const(char)[] result = void;
-        char[30] intBuffer = void;
-        auto intAsStr = intToString(intBuffer, num);
-        if(intAsStr.length < padding)
-        {
-            auto toPad = padding - intAsStr.length;
-            buffer[0 .. toPad] = ' ';
-            result = buffer[0 .. intAsStr.length + toPad]
-        }
-        else
-        {
-            result = intAsStr[];
-        }
-        return result;
-    }
-+/
+// - printf doesn't print out the 0x at the beginning of a hex number. Should we not do it this way?
 
 // NOTE: The order of members returned by __traits(allMembers) is not guaranteed to be in the order they appear in the struct definition.
 // However, it SEEMS that the .tupleof property is expected (perhaps even required) to be ordered this way. This behavior appears to be expected by
@@ -42,23 +21,14 @@
 
 enum ToPrint;
 
-private @nogc nothrow:
+public @nogc nothrow:
 
-// Library configuration options:
-enum outputStructAndUnionNames = false;
-enum assertOnTruncation        = false; // Trigger an assertion when formatting to a buffer results in a string larger than the buffer size
-enum use_cstdio                = true;  // Use the standard C library output functions when printing to the console
-
-import std.traits;
-import std.range;
-
-alias ArrayTarget(T : U[], U) = U;
-enum bool isCString(T) = is(T == char*) || is(T == const(char)*) || is(T == immutable(char)*);
-enum bool isCharArray(T) = isArray!T && (is(ArrayTarget!(T) == char) || is(ArrayTarget!(T) == immutable char) || is(ArrayTarget!(T) == const char));
-
-template useQuotes(T)
+private
 {
-    enum useQuotes = isCharArray!T || isCString!T;
+    // Library configuration options:
+    enum outputStructAndUnionNames = false; // Determines if formatting a struct or a union should output the name of the data type in the resulting text.
+    enum assertOnTruncation        = false; // Trigger an assertion when formatting to a buffer results in a string larger than the buffer size
+    enum use_cstdio                = true;  // Use the standard C library output functions when printing to the console
 }
 
 static if(use_cstdio)
@@ -87,542 +57,6 @@ else
         static assert(0, "Unsupported OS.");
     }
 }
-
-immutable char[] intToCharTableLower = "0123456789abcdefxp";
-immutable char[] intToCharTableUpper = "0123456789ABCDEFXP";
-
-size_t length(const(char*) s)
-{
-    size_t result = 0;
-
-    while(s[result] != '\0')
-    {
-        result++;
-    }
-
-    return result;
-}
-
-ulong formatArg(Type, Dest)(ref Type t, in FormatSpec spec, auto ref Dest dest)
-if(is(Dest == FileHandle) || (isArray!Dest && is(ArrayTarget!Dest == char)) || (isOutputRange!(Dest, char) && !isArray!Dest))
-{
-    alias T = Unqual!Type;
-    ulong bytesWritten = 0;
-
-    size_t getHighestOffsetUntil(T, size_t memberCutoffIndex)()
-    if(is(T == struct) || is(T == union))
-    {
-        size_t result = 0;
-        static foreach(i, member; T.tupleof)
-        {
-            static if(i < memberCutoffIndex)
-            {
-                result = result < T.tupleof[i].offsetof ? T.tupleof[i].offsetof : result;
-            }
-        }
-        return result;
-    }
-
-    static if (is(Dest == FileHandle))
-    {
-        void outPolicy(inout(char)[] t)
-        {
-            pragma(inline, true);
-            printFile(dest, t);
-            bytesWritten += t.length;
-        }
-
-        void formatPolicy(U)(ref U val)
-        {
-            pragma(inline, true);
-            bytesWritten += formatArg(val, spec, dest);
-        }
-    }
-    else static if(isOutputRange!(Dest, char) && !isArray!Dest)
-    {
-        void outPolicy(inout(char)[] t)
-        {
-            pragma(inline, true)
-            dest.put(t);
-            bytesWritten += t.length;
-        }
-
-        void formatPolicy(U)(ref U val)
-        {
-            pragma(inline, true);
-            bytesWritten += formatArg(val, spec, dest);
-        }
-    }
-    else
-    {
-        void outPolicy(inout(char)[] t)
-        {
-            pragma(inline, true)
-            bytesWritten += safeCopy(dest[bytesWritten .. $], t);
-        }
-
-        void formatPolicy(U)(ref U val)
-        {
-            pragma(inline, true);
-            bytesWritten += formatArg(val, spec, dest[bytesWritten .. $]);
-        }
-    }
-
-    static if (is(T == enum))
-    {
-        static foreach (i, member; EnumMembers!T)
-        {
-            if (t == member)
-            {
-                outPolicy(__traits(identifier, EnumMembers!T[i]));
-            }
-        }
-    }
-    else static if(is(T == bool))
-    {
-        if(t)
-        {
-            outPolicy("true");
-        }
-        else
-        {
-            outPolicy("false");
-        }
-    }
-    else static if (isIntegral!T)
-    {
-        char[30] intBuffer;
-        auto result = intToString(intBuffer, t, spec.flags, (spec.flags & FmtFlag.Precision) ? spec.precision : 0);
-        outPolicy(result);
-    }
-    else static if (is(T == char))
-    {
-        char[1] temp = t;
-        outPolicy(temp);
-    }
-    else static if (is(T == float) || is(T == double))
-    {
-        char[512] buffer;
-        auto result = doubleToString(buffer, t, spec.flags, (spec.flags & FmtFlag.Precision) ? spec.precision : 6);
-        static if(is(Dest == FileHandle))
-        {
-            printFile(dest, result);
-        }
-        else
-        {
-            outPolicy(result);
-        }
-    }
-    else static if(isCString!T)
-    {
-        size_t srcLength = 0;
-        while(t[srcLength] != '\0') srcLength++;
-        outPolicy(t[0 .. srcLength]);
-    }
-    else static if(isCharArray!T)
-    {
-        size_t endIndex = t.length;
-        foreach(i; 0 .. t.length)
-        {
-            if(t[i] == '\0')
-            {
-                endIndex = i;
-                break;
-            }
-        }
-        outPolicy(t[0 .. endIndex]);
-    }
-    else static if(isInputRange!T)
-    {
-        static assert(!isInfinite!T);
-
-        outPolicy("[");
-        size_t i = 0;
-        foreach(ref v; t)
-        {
-            if(i > 0) outPolicy(", ");
-            formatPolicy(v);
-            i++;
-        }
-        outPolicy("]");
-    }
-    else static if(is(T == struct))
-    {
-        static if(outputStructAndUnionNames) outPolicy(T.stringof);
-        outPolicy("(");
-
-        auto members = t.tupleof;
-        foreach(i, member; members)
-        {
-            static if(i == 0 || t.tupleof[i].offsetof > getHighestOffsetUntil!(T, i))
-            {
-                static if(i > 0) outPolicy(", ");
-
-                enum surroundWithQuotes = useQuotes!(typeof(member));
-                static if(surroundWithQuotes) outPolicy("\"");
-                formatPolicy(member);
-                static if(surroundWithQuotes) outPolicy("\"");
-            }
-        }
-        outPolicy(")");
-    }
-    else static if(is(T == union))
-    {
-        alias taggedToPrintMembers = getSymbolsByUDA!(T, ToPrint);
-        static if (taggedToPrintMembers.length > 0)
-        {
-            static if(outputStructAndUnionNames) outPolicy(T.stringof);
-            outPolicy("(");
-            static foreach(i, member; taggedToPrintMembers)
-            {{
-                enum surroundWithQuotes = useQuotes!(typeof(member));
-                static if(surroundWithQuotes) outPolicy("\"");
-                formatPolicy(t.tupleof[i]);
-                static if(surroundWithQuotes) outPolicy("\"");
-                static if (i < taggedToPrintMembers.length - 1) outPolicy(", ");
-            }}
-            outPolicy(")");
-        }
-        else static if(__traits(hasMember, T, "toPrintIndex"))
-        {
-            outer: switch(t.toPrintIndex())
-            {
-                static foreach(i, m; T.tupleof)
-                {
-                    case i:
-                    {
-                        enum surroundWithQuotes = useQuotes!(typeof(m));
-                        static if(surroundWithQuotes) outPolicy("\"");
-                        formatPolicy(t.tupleof[i]);
-                        static if(surroundWithQuotes) outPolicy("\"");
-                    } break outer;
-                }
-
-                default: assert(0, "Invalid toPrintIndex value."); break outer;
-            }
-        }
-        else
-        {
-            static if (outputStructAndUnionNames) outPolicy(T.stringof);
-            outPolicy("(");
-            foreach(i, member; t.tupleof)
-            {
-                static if(i == 0 || t.tupleof[i].offsetof > getHighestOffsetUntil!(T, i))
-                {
-                    static if(i > 0) outPolicy(", ");
-
-                    enum surroundWithQuotes = useQuotes!(typeof(member));
-                    static if(surroundWithQuotes) outPolicy("\"");
-                    formatPolicy(t.tupleof[i]);
-                    static if(surroundWithQuotes) outPolicy("\"");
-                }
-            }
-            outPolicy(")");
-        }
-    }
-    else static if(isArray!T)
-    {
-        outPolicy("[");
-
-        foreach(i; 0 .. t.length)
-        {
-            formatPolicy(t[i]);
-            if (i < t.length - 1)
-            {
-                outPolicy(", ");
-            }
-        }
-
-        outPolicy("]");
-    }
-    else static if (isPointer!T)
-    {
-        char[30] intBuffer;
-        auto result = intToString(intBuffer, cast(size_t)t, FmtFlag.Hex, size_t.sizeof);
-        outPolicy(result);
-    }
-    else
-    {
-        pragma(msg, "ERR in print.formatArg(...): Unhandled type " ~ T.stringof);
-        static assert(0);
-    }
-
-    return bytesWritten;
-}
-
-bool isDigit(char c)
-{
-    return (c >= '0') && (c <= '9');
-}
-
-enum FmtFlag : ubyte
-{
-    None      = 0,
-    Hex       = 1 << 0,
-    HexUp     = 1 << 1,
-    Comma     = 1 << 2,
-    ENot      = 1 << 3,
-    ENotUp    = 1 << 4,
-    Sign      = 1 << 5,
-    Precision = 1 << 6,
-}
-
-struct FormatSpec
-{
-    FmtFlag flags;
-    ubyte precision;
-}
-
-uint eatAndReturnArgIndex(ref inout(char)[] commandStr)
-{
-    assert(isDigit(commandStr[0]), "Format command must start with numeric argument index.");
-    uint argIndex = 0;
-    size_t end = commandStr.length;
-    foreach(i, c; commandStr)
-    {
-        if(!isDigit(c))
-        {
-            end = i;
-            break;
-        }
-        argIndex += (c - '0') * (10 ^^ i);
-    }
-
-    commandStr = commandStr[end .. $];
-    return argIndex;
-}
-
-FormatSpec getFormatSpec(in char[] commandStr)
-{
-    FormatSpec result;
-
-    const(char)* place = commandStr.ptr;
-    const(char)* end   = commandStr.ptr + commandStr.length;
-    while(place < end)
-    {
-        switch(*place)
-        {
-            case 'x':
-                result.flags |= FmtFlag.Hex;
-                place++;
-                break;
-
-            case 'X':
-                result.flags |= FmtFlag.HexUp;
-                place++;
-                break;
-
-            case 'e':
-                result.flags |= FmtFlag.ENot;
-                place++;
-                break;
-
-            case 'E':
-                result.flags |= FmtFlag.ENotUp;
-                place++;
-                break;
-
-            case ',':
-                result.flags |= FmtFlag.Comma;
-                place++;
-                break;
-
-            case '+':
-                result.flags |= FmtFlag.Sign;
-                place++;
-                break;
-
-            case 'p':
-            {
-                result.flags |= FmtFlag.Precision;
-                place++;
-                assert(isDigit(*place) && place < end, "Number expected after precision token (p) in format specifier.");
-                uint i = 0;
-                while(isDigit(*place) && place < end)
-                {
-                    result.precision += (*place - '0') * (10 ^^ i);
-                    place++;
-                    i++;
-                }
-            } break;
-
-            default: assert(0, "Unrecognized format specifier"); break;
-        }
-    }
-
-    return result;
-}
-
-size_t safeCopy(char[] dest, inout(char)[] source)
-{
-    size_t bytesToCopy = void;
-    bool truncated = false;
-
-    if(dest.length < source.length)
-    {
-        bytesToCopy = dest.length;
-        truncated = true;
-    }
-    else
-    {
-        bytesToCopy = source.length;
-    }
-
-    static if (assertOnTruncation) assert(!truncated);
-
-    dest[0 .. bytesToCopy] = source[0 .. bytesToCopy];
-    return bytesToCopy;
-}
-
-char[] intToString(T)(ref char[30] buffer, T n, FmtFlag flags = FmtFlag.None, ubyte precision = 0)
-if(isIntegral!T)
-{
-    assert(precision < buffer.length - 2, "Integer precision must leave enough room in the buffer for at least two characters.");
-
-    static if (isSigned!T)
-    {
-        // TODO; Does this play well with displaying negative numbers in hex?
-        import std.math : abs, sgn;
-        T sign = cast(T)sgn(n);
-        n = abs(n); // NOTE: Strip off the sign to prevent the mod operator from giving us a negative array index.
-    }
-
-    ubyte base = (flags & FmtFlag.Hex) || (flags & FmtFlag.HexUp) ? 16 : 10;
-    auto intToCharTable = (flags & FmtFlag.HexUp) ? intToCharTableUpper[] : intToCharTableLower[];
-
-    size_t bufferFill = buffer.length;
-    size_t place = bufferFill;
-    size_t loops = 0;
-    while(true)
-    {
-        if(place == 0) break;
-        place--;
-        loops++;
-
-        auto c = intToCharTable[n % base];
-        buffer[place] = c;
-        n /= base;
-
-        if ((flags & FmtFlag.Comma) && loops % 3 == 0)
-        {
-            buffer[--place] = ',';
-        }
-
-        if(n == 0)
-        {
-            {
-                auto spaceWritten = buffer.length - place;
-                if(precision > spaceWritten)
-                {
-                    auto zeroesToWrite = precision - spaceWritten;
-                    buffer[place - zeroesToWrite .. place] = '0';
-                    place -= zeroesToWrite;
-                }
-            }
-
-            if(base == 16)
-            {
-                buffer[--place] = 'x'; // TODO: Does this need to be uppercase when using HexUp?
-                buffer[--place] = '0';
-            }
-            else if(base == 10)
-            {
-                static if (isSigned!T)
-                {
-                    if (sign < 0)
-                    {
-                        buffer[--place] = '-';
-                    }
-                    else if(flags & FmtFlag.Sign)
-                    {
-                        buffer[--place] = '+';
-                    }
-                }
-                else
-                {
-                    if(flags & FmtFlag.Sign)
-                    {
-                        buffer[--place] = '+';
-                    }
-                }
-            }
-
-            bufferFill = place;
-            break;
-        }
-    }
-
-    return buffer[bufferFill .. $];
-}
-
-enum printCommon = `
-    size_t fmtCursor = 0;
-    size_t fmtCopyToBufferIndex = 0;
-
-    while(fmtCursor < fmt.length)
-    {
-        if (fmt[fmtCursor] == '{')
-        {
-            if (fmtCursor < fmt.length - 1 && fmt[fmtCursor+1] == '{')
-            {
-                fmtCursor++;
-                mixin(outputPolicy);
-                fmtCursor++;
-                fmtCopyToBufferIndex = fmtCursor;
-            }
-            else
-            {
-                mixin(outputPolicy);
-
-                fmtCursor++;
-                size_t commandStart = fmtCursor;
-                size_t commandEnd   = fmtCursor;
-                while(fmtCursor < fmt.length)
-                {
-                    if (fmt[fmtCursor] == '}')
-                    {
-                        commandEnd = fmtCursor;
-                        fmtCursor++;
-                        break;
-                    }
-                    fmtCursor++;
-                }
-
-                fmtCopyToBufferIndex = fmtCursor;
-
-                auto formatCommand = fmt[commandStart .. commandEnd];
-
-                auto argIndex = eatAndReturnArgIndex(formatCommand);
-                assert(argIndex < args.length, "ERR: Format index exceeds length of provided arguments.");
-                auto formatSpec = getFormatSpec(formatCommand);
-
-                // NOTE: Variadic template argument indexing based on std.format.getNth(...) from Phobos.
-                outer: switch(argIndex)
-                {
-                    static foreach(i, _; Args)
-                    {
-                        case i:
-                        {
-                            mixin(formatPolicy);
-                        } break outer;
-                    }
-
-                    default:
-                    {
-                        assert(0,"ERR: Unable to access variadic argument.");
-                    } break outer;
-                }
-            }
-        }
-        else
-            fmtCursor++;
-    }
-    fmtCursor = fmt.length;
-
-    mixin(outputPolicy);
-`;
-
-public:
 
 char[] format(Args...)(inout(char)[] fmt, char[] buffer, Args args)
 {
@@ -751,17 +185,107 @@ void printFile(FileHandle file, inout(char)[] msg)
     }
 }
 
-private:
+enum FmtFlag : ubyte
+{
+    None      = 0,
+    Hex       = 1 << 0,
+    HexUp     = 1 << 1,
+    Comma     = 1 << 2,
+    ENot      = 1 << 3,
+    ENotUp    = 1 << 4,
+    Sign      = 1 << 5,
+    Precision = 1 << 6,
+}
+
+char[] intToString(T)(ref char[30] buffer, T n, FmtFlag flags = FmtFlag.None, ubyte precision = 0)
+if(isIntegral!T)
+{
+    assert(precision < buffer.length - 2, "Integer precision must leave enough room in the buffer for at least two characters.");
+
+    static if (isSigned!T)
+    {
+        // TODO; Does this play well with displaying negative numbers in hex? Is it NORMAL to display negative numbers using hex?
+        import std.math : abs, sgn;
+        T sign = cast(T)sgn(n);
+        n = abs(n); // NOTE: Strip off the sign to prevent the mod operator from giving us a negative array index.
+    }
+
+    ubyte base = (flags & FmtFlag.Hex) || (flags & FmtFlag.HexUp) ? 16 : 10;
+    auto intToCharTable = (flags & FmtFlag.HexUp) ? intToCharTableUpper[] : intToCharTableLower[];
+
+    size_t bufferFill = buffer.length;
+    size_t place = bufferFill;
+    size_t loops = 0;
+    while(true)
+    {
+        if(place == 0) break;
+        place--;
+        loops++;
+
+        auto c = intToCharTable[n % base];
+        buffer[place] = c;
+        n /= base;
+
+        if ((flags & FmtFlag.Comma) && loops % 3 == 0)
+        {
+            buffer[--place] = ',';
+        }
+
+        if(n == 0)
+        {
+            {
+                auto spaceWritten = buffer.length - place;
+                if(precision > spaceWritten)
+                {
+                    auto zeroesToWrite = precision - spaceWritten;
+                    buffer[place - zeroesToWrite .. place] = '0';
+                    place -= zeroesToWrite;
+                }
+            }
+
+            if(base == 16)
+            {
+                buffer[--place] = 'x'; // TODO: Does this need to be uppercase when using HexUp?
+                buffer[--place] = '0';
+            }
+            else if(base == 10)
+            {
+                static if (isSigned!T)
+                {
+                    if (sign < 0)
+                    {
+                        buffer[--place] = '-';
+                    }
+                    else if(flags & FmtFlag.Sign)
+                    {
+                        buffer[--place] = '+';
+                    }
+                }
+                else
+                {
+                    if(flags & FmtFlag.Sign)
+                    {
+                        buffer[--place] = '+';
+                    }
+                }
+            }
+
+            bufferFill = place;
+            break;
+        }
+    }
+
+    return buffer[bufferFill .. $];
+}
 
 ////
 //
-// Floating point conversion code based on stb_sprintf.
+// Floating point to string conversion code based on stb_sprintf.
 // Original author Jeff Roberts. Further developed by Sean Barrett and many others.
 // https://github.com/nothings/stb/
 // License: Public domain
 //
 ////
-
 char[] doubleToString(return ref char[512] buf, double fv, FmtFlag flags = FmtFlag.None, ubyte precision = 6)
 {
     //char const *h;
@@ -1239,6 +763,461 @@ scopy:
 
     return buf[0 .. bf - buf.ptr];
 }
+
+private:
+
+import std.traits;
+import std.range;
+
+alias ArrayTarget(T : U[], U) = U;
+enum bool isCString(T) = is(T == char*) || is(T == const(char)*) || is(T == immutable(char)*);
+enum bool isCharArray(T) = isArray!T && (is(ArrayTarget!(T) == char) || is(ArrayTarget!(T) == immutable char) || is(ArrayTarget!(T) == const char));
+
+template useQuotes(T)
+{
+    enum useQuotes = isCharArray!T || isCString!T;
+}
+
+immutable char[] intToCharTableLower = "0123456789abcdefxp";
+immutable char[] intToCharTableUpper = "0123456789ABCDEFXP";
+
+size_t length(const(char*) s)
+{
+    size_t result = 0;
+
+    while(s[result] != '\0')
+    {
+        result++;
+    }
+
+    return result;
+}
+
+ulong formatArg(Type, Dest)(ref Type t, in FormatSpec spec, auto ref Dest dest)
+if(is(Dest == FileHandle) || (isArray!Dest && is(ArrayTarget!Dest == char)) || (isOutputRange!(Dest, char) && !isArray!Dest))
+{
+    alias T = Unqual!Type;
+    ulong bytesWritten = 0;
+
+    size_t getHighestOffsetUntil(T, size_t memberCutoffIndex)()
+    if(is(T == struct) || is(T == union))
+    {
+        size_t result = 0;
+        static foreach(i, member; T.tupleof)
+        {
+            static if(i < memberCutoffIndex)
+            {
+                result = result < T.tupleof[i].offsetof ? T.tupleof[i].offsetof : result;
+            }
+        }
+        return result;
+    }
+
+    static if (is(Dest == FileHandle))
+    {
+        void outPolicy(inout(char)[] t)
+        {
+            pragma(inline, true);
+            printFile(dest, t);
+            bytesWritten += t.length;
+        }
+
+        void formatPolicy(U)(ref U val)
+        {
+            pragma(inline, true);
+            bytesWritten += formatArg(val, spec, dest);
+        }
+    }
+    else static if(isOutputRange!(Dest, char) && !isArray!Dest)
+    {
+        void outPolicy(inout(char)[] t)
+        {
+            pragma(inline, true)
+            dest.put(t);
+            bytesWritten += t.length;
+        }
+
+        void formatPolicy(U)(ref U val)
+        {
+            pragma(inline, true);
+            bytesWritten += formatArg(val, spec, dest);
+        }
+    }
+    else
+    {
+        void outPolicy(inout(char)[] t)
+        {
+            pragma(inline, true)
+            bytesWritten += safeCopy(dest[bytesWritten .. $], t);
+        }
+
+        void formatPolicy(U)(ref U val)
+        {
+            pragma(inline, true);
+            bytesWritten += formatArg(val, spec, dest[bytesWritten .. $]);
+        }
+    }
+
+    static if (is(T == enum))
+    {
+        static foreach (i, member; EnumMembers!T)
+        {
+            if (t == member)
+            {
+                outPolicy(__traits(identifier, EnumMembers!T[i]));
+            }
+        }
+    }
+    else static if(is(T == bool))
+    {
+        if(t)
+        {
+            outPolicy("true");
+        }
+        else
+        {
+            outPolicy("false");
+        }
+    }
+    else static if (isIntegral!T)
+    {
+        char[30] intBuffer;
+        auto result = intToString(intBuffer, t, spec.flags, (spec.flags & FmtFlag.Precision) ? spec.precision : 0);
+        outPolicy(result);
+    }
+    else static if (is(T == char))
+    {
+        char[1] temp = t;
+        outPolicy(temp);
+    }
+    else static if (is(T == float) || is(T == double))
+    {
+        char[512] buffer;
+        auto result = doubleToString(buffer, t, spec.flags, (spec.flags & FmtFlag.Precision) ? spec.precision : 6);
+        static if(is(Dest == FileHandle))
+        {
+            printFile(dest, result);
+        }
+        else
+        {
+            outPolicy(result);
+        }
+    }
+    else static if(isCString!T)
+    {
+        size_t srcLength = 0;
+        while(t[srcLength] != '\0') srcLength++;
+        outPolicy(t[0 .. srcLength]);
+    }
+    else static if(isCharArray!T)
+    {
+        size_t endIndex = t.length;
+        foreach(i; 0 .. t.length)
+        {
+            if(t[i] == '\0')
+            {
+                endIndex = i;
+                break;
+            }
+        }
+        outPolicy(t[0 .. endIndex]);
+    }
+    else static if(isInputRange!T)
+    {
+        static assert(!isInfinite!T);
+
+        outPolicy("[");
+        size_t i = 0;
+        foreach(ref v; t)
+        {
+            if(i > 0) outPolicy(", ");
+            formatPolicy(v);
+            i++;
+        }
+        outPolicy("]");
+    }
+    else static if(is(T == struct))
+    {
+        static if(outputStructAndUnionNames) outPolicy(T.stringof);
+        outPolicy("(");
+
+        auto members = t.tupleof;
+        foreach(i, member; members)
+        {
+            static if(i == 0 || t.tupleof[i].offsetof > getHighestOffsetUntil!(T, i))
+            {
+                static if(i > 0) outPolicy(", ");
+
+                enum surroundWithQuotes = useQuotes!(typeof(member));
+                static if(surroundWithQuotes) outPolicy("\"");
+                formatPolicy(member);
+                static if(surroundWithQuotes) outPolicy("\"");
+            }
+        }
+        outPolicy(")");
+    }
+    else static if(is(T == union))
+    {
+        alias taggedToPrintMembers = getSymbolsByUDA!(T, ToPrint);
+        static if (taggedToPrintMembers.length > 0)
+        {
+            static if(outputStructAndUnionNames) outPolicy(T.stringof);
+            outPolicy("(");
+            static foreach(i, member; taggedToPrintMembers)
+            {{
+                enum surroundWithQuotes = useQuotes!(typeof(member));
+                static if(surroundWithQuotes) outPolicy("\"");
+                formatPolicy(t.tupleof[i]);
+                static if(surroundWithQuotes) outPolicy("\"");
+                static if (i < taggedToPrintMembers.length - 1) outPolicy(", ");
+            }}
+            outPolicy(")");
+        }
+        else static if(__traits(hasMember, T, "toPrintIndex"))
+        {
+            outer: switch(t.toPrintIndex())
+            {
+                static foreach(i, m; T.tupleof)
+                {
+                    case i:
+                    {
+                        enum surroundWithQuotes = useQuotes!(typeof(m));
+                        static if(surroundWithQuotes) outPolicy("\"");
+                        formatPolicy(t.tupleof[i]);
+                        static if(surroundWithQuotes) outPolicy("\"");
+                    } break outer;
+                }
+
+                default: assert(0, "Invalid toPrintIndex value."); break outer;
+            }
+        }
+        else
+        {
+            static if (outputStructAndUnionNames) outPolicy(T.stringof);
+            outPolicy("(");
+            foreach(i, member; t.tupleof)
+            {
+                static if(i == 0 || t.tupleof[i].offsetof > getHighestOffsetUntil!(T, i))
+                {
+                    static if(i > 0) outPolicy(", ");
+
+                    enum surroundWithQuotes = useQuotes!(typeof(member));
+                    static if(surroundWithQuotes) outPolicy("\"");
+                    formatPolicy(t.tupleof[i]);
+                    static if(surroundWithQuotes) outPolicy("\"");
+                }
+            }
+            outPolicy(")");
+        }
+    }
+    else static if(isArray!T)
+    {
+        outPolicy("[");
+
+        foreach(i; 0 .. t.length)
+        {
+            formatPolicy(t[i]);
+            if (i < t.length - 1)
+            {
+                outPolicy(", ");
+            }
+        }
+
+        outPolicy("]");
+    }
+    else static if (isPointer!T)
+    {
+        char[30] intBuffer;
+        auto result = intToString(intBuffer, cast(size_t)t, FmtFlag.Hex, size_t.sizeof);
+        outPolicy(result);
+    }
+    else
+    {
+        pragma(msg, "ERR in print.formatArg(...): Unhandled type " ~ T.stringof);
+        static assert(0);
+    }
+
+    return bytesWritten;
+}
+
+bool isDigit(char c)
+{
+    return (c >= '0') && (c <= '9');
+}
+
+struct FormatSpec
+{
+    FmtFlag flags;
+    ubyte precision;
+}
+
+uint eatAndReturnArgIndex(ref inout(char)[] commandStr)
+{
+    assert(isDigit(commandStr[0]), "Format command must start with numeric argument index.");
+    uint argIndex = 0;
+    size_t end = commandStr.length;
+    foreach(i, c; commandStr)
+    {
+        if(!isDigit(c))
+        {
+            end = i;
+            break;
+        }
+        argIndex += (c - '0') * (10 ^^ i);
+    }
+
+    commandStr = commandStr[end .. $];
+    return argIndex;
+}
+
+FormatSpec getFormatSpec(in char[] commandStr)
+{
+    FormatSpec result;
+
+    const(char)* place = commandStr.ptr;
+    const(char)* end   = commandStr.ptr + commandStr.length;
+    while(place < end)
+    {
+        switch(*place)
+        {
+            case 'x':
+                result.flags |= FmtFlag.Hex;
+                place++;
+                break;
+
+            case 'X':
+                result.flags |= FmtFlag.HexUp;
+                place++;
+                break;
+
+            case 'e':
+                result.flags |= FmtFlag.ENot;
+                place++;
+                break;
+
+            case 'E':
+                result.flags |= FmtFlag.ENotUp;
+                place++;
+                break;
+
+            case ',':
+                result.flags |= FmtFlag.Comma;
+                place++;
+                break;
+
+            case '+':
+                result.flags |= FmtFlag.Sign;
+                place++;
+                break;
+
+            case 'p':
+            {
+                result.flags |= FmtFlag.Precision;
+                place++;
+                assert(isDigit(*place) && place < end, "Number expected after precision token (p) in format specifier.");
+                uint i = 0;
+                while(isDigit(*place) && place < end)
+                {
+                    result.precision += (*place - '0') * (10 ^^ i);
+                    place++;
+                    i++;
+                }
+            } break;
+
+            default: assert(0, "Unrecognized format specifier"); break;
+        }
+    }
+
+    return result;
+}
+
+size_t safeCopy(char[] dest, inout(char)[] source)
+{
+    size_t bytesToCopy = void;
+    bool truncated = false;
+
+    if(dest.length < source.length)
+    {
+        bytesToCopy = dest.length;
+        truncated = true;
+    }
+    else
+    {
+        bytesToCopy = source.length;
+    }
+
+    static if (assertOnTruncation) assert(!truncated);
+
+    dest[0 .. bytesToCopy] = source[0 .. bytesToCopy];
+    return bytesToCopy;
+}
+
+enum printCommon = `
+    size_t fmtCursor = 0;
+    size_t fmtCopyToBufferIndex = 0;
+
+    while(fmtCursor < fmt.length)
+    {
+        if (fmt[fmtCursor] == '{')
+        {
+            if (fmtCursor < fmt.length - 1 && fmt[fmtCursor+1] == '{')
+            {
+                fmtCursor++;
+                mixin(outputPolicy);
+                fmtCursor++;
+                fmtCopyToBufferIndex = fmtCursor;
+            }
+            else
+            {
+                mixin(outputPolicy);
+
+                fmtCursor++;
+                size_t commandStart = fmtCursor;
+                size_t commandEnd   = fmtCursor;
+                while(fmtCursor < fmt.length)
+                {
+                    if (fmt[fmtCursor] == '}')
+                    {
+                        commandEnd = fmtCursor;
+                        fmtCursor++;
+                        break;
+                    }
+                    fmtCursor++;
+                }
+
+                fmtCopyToBufferIndex = fmtCursor;
+
+                auto formatCommand = fmt[commandStart .. commandEnd];
+
+                auto argIndex = eatAndReturnArgIndex(formatCommand);
+                assert(argIndex < args.length, "ERR: Format index exceeds length of provided arguments.");
+                auto formatSpec = getFormatSpec(formatCommand);
+
+                // NOTE: Variadic template argument indexing based on std.format.getNth(...) from Phobos.
+                outer: switch(argIndex)
+                {
+                    static foreach(i, _; Args)
+                    {
+                        case i:
+                        {
+                            mixin(formatPolicy);
+                        } break outer;
+                    }
+
+                    default:
+                    {
+                        assert(0,"ERR: Unable to access variadic argument.");
+                    } break outer;
+                }
+            }
+        }
+        else
+            fmtCursor++;
+    }
+    fmtCursor = fmt.length;
+
+    mixin(outputPolicy);
+`;
 
 void stbsp__lead_sign(stbsp__uint32 fl, char *sign)
 {

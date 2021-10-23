@@ -317,6 +317,7 @@ void rangeExamples()
 
 void formatOptionsExamples()
 {
+    printOut("\n\n---Format Options examples---\n");
     formatOut("Hex version of number {0}: {1x}\n", 255, 255);
     formatOut("Hex (uppercase) version of number {0}: {1X}\n", 255, 255);
 
@@ -325,15 +326,40 @@ void formatOptionsExamples()
     formatOut("{0Xp3+}\n", 1);
     formatOut("{0+}\n", -249);
 
-    formatOut("{0E}\n", 123.456789);
     import core.stdc.stdio;
-    printf("%E\n", 123.456789);
+    printf("%x\n", 255);
 
-    printf("%X\n", 255);
+    formatOut("{0E}\n", 123.456789);
 
     formatOut("{0,+}\n", 1234567.89);
 
     formatOut("With commas: {0,}\n", long.min+1);
+}
+
+void padLeftExample()
+{
+    // Padding a string with whitespace isn't directly supported in djinnprint. Fortunately the features of
+    // the library can be utilized to easily create custom formatting functions, like so:
+    printOut("\n\n---Pad Left example---\n");
+    char[512] buffer;
+    char[] result;
+
+    void padOutput(uint minCharacters, char[] str)
+    {
+        if(str.length < minCharacters)
+        {
+            auto charsToPad = minCharacters - str.length;
+            foreach(i; 0 .. charsToPad)
+            {
+                printOut(" ");
+            }
+        }
+        printOut(str);
+    }
+
+    padOutput(20, format("${0,p2}\n", buffer, 12456.12));
+    padOutput(20, format("${0,p2}\n", buffer, 84937895.98));
+    padOutput(20, format("${0,p2}\n", buffer, 345.87));
 }
 
 extern(C) int main()
@@ -346,7 +372,9 @@ extern(C) int main()
 
     rangeExamples();
 
-    formatOptionsExamples;
+    formatOptionsExamples();
+
+    padLeftExample();
 
     return 0;
 }

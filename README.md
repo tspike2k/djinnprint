@@ -7,50 +7,55 @@ Type-safe, @nogc functions used to format data as text. Also -betterC compatible
 ```D
 import djinnprint;
 
-void main()
+// Format to a buffer:
+char[512] buffer;
+printOut(format("The numbers are {2}, {0}, and {1}.\n", buffer, 1, 2, 3)); // prints: The numbers are 3, 1, and 2.
+
+// Format directly to stdout:
+formatOut("The numbers are {1}, {2}, and {0}.\n", 1, 2, 3); // prints: The numbers are 2, 3, and 1.
+
+// Format structs:
+struct TestStruct
 {
-    // Format to a buffer:
-    char[512] buffer;
-    printOut(format("The numbers are {2}, {0}, and {1}.\n", buffer, 1, 2, 3));
-
-    // Format directly to stdout:
-    formatOut("The numbers are {1}, {2}, and {0}.\n", 1, 2, 3);
-
-    // Format structs:
-    struct TestStruct
-    {
-        int[2] ints;
-        float f;
-    }
-
-    TestStruct test = TestStruct([1, 2], 3.0f);
-    formatOut("TestStruct{0}\n", test);
+    int[2] ints;
+    float f;
 }
-```
 
-### Output
-
-```
-The numbers are 3, 1, and 2.
-The numbers are 2, 3, and 1.
-TestStruct([1, 2], 3.000000)
+TestStruct test = TestStruct([1, 2], 3.0f);
+formatOut("TestStruct{0}\n", test); // prints: TestStruct([1, 2], 3.000000)
 ```
 
 ## About
 
 The D programming language employs a garbage collector to automate memory management by default. This is not always desirable. Though garbage collection can easily be disabled by marking functions with the @nogc attribute, much of the standard library is reliant on the garbage collector and cannot be called from @nogc code. This limitation can be observed in std.format, the portion of the standard library which provides data-to-text formatting. The aim behind djinnprint is to fill this void by providing simple, @nogc compatible data formatting functions. An additional goal is to ease localization efforts by letting the format string determine the order arguments appear in the resulting output.
 
-For a demonstration of this code, see the included examples.d file.
+For a more detailed demonstration of this code, see the included examples.d file.
 
 ## Usage
 
 ### Format Specifiers
 
-The formatting and printing functions provided by djinnprint each take a format string as the first argument. This string will be copied to the output as-is, except for any format specifiers. A format specifier is a portion of the format string that begins with a single open curly brace ("{") and ends with a closed curly brace ("}"). The text between these characters determines which argument will be formatted and in what way. This text must not contain whitespace and and must begin with a number indicating the index of the argument whose value is to be formatted (indices start at zero).
+The formatting and printing functions provided by djinnprint each take a format string as the first argument. This string will be copied to the output as-is, except for any format specifiers. A format specifier is a portion of the format string that begins with a single open curly brace ("{") and ends with a closed curly brace ("}"). The text between these characters determines which argument will be formatted and in what way. This text must not contain whitespace and must begin with a number indicating the index of the argument whose value is to be formatted (indices start at zero).
 
 If two open curly braces appear next to one another djinnprint will not interpret the characters as the start of a format specifier; instead it will only output one open curly brace and will continue to copy the rest of the format string as usual, without interpreting either character as the start of a format specifier. In this way, double open curly braces ("{{") act as an escape character.
 
-Note that formatting options are planned but not currently implemented.
+Special characters within the format specifier allow the user to configure how values will be formatted. Here is a full list of these modifiers and what the effect they have:
+
+* __x__: Real and integer values are formatted in lowercase hexadecimal.
+* __X__: Real and integer values are formatted in uppercase hexadecimal.
+* __e__: Real values are formatted using lowercase scientific notation.
+* __E__: Real values are formatted using uppercase scientific notation.
+* __,__: Real and integer values introduce commas at every three non-fractional digits.
+* __+__: Real and integer values begin with a plus sign when positive.
+* __p*n*__: Real and interger values have their precision set to *n* digits. For real values this determines how many digits should be shown after the decimal point. For integer values this determines the minimum number of digits that should be printed. If the number of digits for the value is below *n* then the result is filled with enough leading zeroes to match the specified precision. The default precision for real values is six and the default for integers is zero.
+
+```D
+    formatOut("{0X}\n", 255); // prints: 0xFF
+    formatOut("{0,+}\n", 12300); // prints: +12,300
+    formatOut("{0p6x}\n", 12); // prints: 0x00000c
+    formatOut("{0p2}\n", 3.14159); // prints: 3.14
+    formatOut("{0e}\n", 3.14159); // prints: 3.141590e+00
+```
 
 ### format()
 
@@ -79,8 +84,7 @@ This project is currently a very early proof-of-concept and is in no way product
 ### Todo
 
 * Testing on Windows.
-* Add formatting options for variables (commas for integers, hex output, etc.). Additionally, there should be an option to print the name of each struct type before the value of its members. This could be useful in code generation. For instance, printing `Vect2(1.0000f, 1.0000f)` would be useful for this case rather than `(1.0000, 1.000)`, the latter of which is the default behavior.
-* Figure out a good way to format anonymous union structs members. 
+* Figure out a good way to format anonymous union structs members.
 
 ## Installation
 
