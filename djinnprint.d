@@ -49,8 +49,31 @@ else
     else version(Windows)
     {
         // TODO: Test on Windows
-        import core.sys.windows : FileHandle, GetStdHandle;
+        // TODO: Should we support the ability for the user to overload the console handles? Or is that beyond the scope of this library? See here for more information:
+        // https://docs.microsoft.com/en-us/windows/console/console-handles
+
+        private import core.sys.windows.basetsd : HANDLE;
+        private import core.sys.windows.winbase : INVALID_HANDLE_VALUE;
         alias FileHandle = HANDLE;
+        __gshared FileHandle stdOut;
+        __gshared FileHandle stdErr;
+
+        static this()
+        {
+            setFileHandles();
+        }
+
+        void setFileHandles()
+        {
+            // TODO: Using handles from GetStdHandle doesn't seem to work under correctly, at least when testing under wine.
+            // All it will print to the console is FF, strangely enough. Figure out why this isn't working (or if it's a wine issue).
+            import core.sys.windows.winbase : GetStdHandle, STD_ERROR_HANDLE, STD_OUTPUT_HANDLE;
+
+            stdOut = GetStdHandle(STD_OUTPUT_HANDLE);
+            assert(stdOut != INVALID_HANDLE_VALUE);
+            stdErr = GetStdHandle(STD_ERROR_HANDLE);
+            assert(stdErr != INVALID_HANDLE_VALUE);
+        }
     }
     else
     {
@@ -88,14 +111,7 @@ if(isOutputRange!(U, char) && !isCharArray!U)
 
 void formatOut(Args...)(inout(char)[] fmt, Args args)
 {
-    version(Windows)
-    {
-        HANDLE file = GetStdHandle(STD_OUTPUT_HANDLE);
-    }
-    else
-    {
-        FileHandle file = stdOut;
-    }
+    auto file = stdOut;
 
     enum outputPolicy = `printFile(file, fmt.ptr[fmtCopyToBufferIndex .. fmtCursor]);`;
     enum formatPolicy = `formatArg(args[i], formatSpec, file);`;
@@ -105,14 +121,7 @@ void formatOut(Args...)(inout(char)[] fmt, Args args)
 
 void formatErr(Args...)(inout(char)[] fmt, Args args)
 {
-    version(Windows)
-    {
-        HANDLE file = GetStdHandle(STD_ERROR_HANDLE);
-    }
-    else
-    {
-        FileHandle file = stdErr;
-    }
+    auto file = stdErr;
 
     enum outputPolicy = `printFile(file, fmt.ptr[fmtCopyToBufferIndex .. fmtCursor]);`;
     enum formatPolicy = `formatArg(args[i], formatSpec, file);`;
@@ -130,29 +139,13 @@ void formatFile(Args...)(FileHandle file, inout(char)[] fmt, Args args)
 
 void printOut(inout(char)[] msg)
 {
-    version(Windows)
-    {
-        HANDLE file = GetStdHandle(STD_OUTPUT_HANDLE);
-    }
-    else
-    {
-        FileHandle file = stdOut;
-    }
-
+    FileHandle file = stdOut;
     printFile(file, msg);
 }
 
 void printErr(inout(char)[] msg)
 {
-    version(Windows)
-    {
-        HANDLE file = GetStdHandle(STD_ERROR_HANDLE);
-    }
-    else
-    {
-        FileHandle file = stdErr;
-    }
-
+    FileHandle file = stdErr;
     printFile(file, msg);
 }
 
@@ -174,9 +167,9 @@ void printFile(FileHandle file, inout(char)[] msg)
         }
         else version(Windows)
         {
-            import core.sys.windows : WriteFile, INVALID_HANDLE_VALUE;
+            import core.sys.windows.winbase : WriteFile, INVALID_HANDLE_VALUE;
             assert(file != INVALID_HANDLE_VALUE);
-            WriteFile(file, msg.ptr, msg.length, null, null);
+            WriteFile(file, msg.ptr, cast(uint)msg.length, null, null);
         }
         else
         {
@@ -222,7 +215,7 @@ if(isIntegral!T)
         place--;
         loops++;
 
-        auto c = intToCharTable[n % base];
+        auto c = intToCharTable[cast(size_t)(n % base)];
         buffer[place] = c;
         n /= base;
 
@@ -793,11 +786,11 @@ size_t length(const(char*) s)
     return result;
 }
 
-ulong formatArg(Type, Dest)(ref Type t, in FormatSpec spec, auto ref Dest dest)
-if(is(Dest == FileHandle) || (isArray!Dest && is(ArrayTarget!Dest == char)) || (isOutputRange!(Dest, char) && !isArray!Dest))
+size_t formatArg(Type, Dest)(ref Type t, in FormatSpec spec, auto ref Dest dest)
+if(is(Unqual!Dest == FileHandle) || (isArray!Dest && is(ArrayTarget!Dest == char)) || (isOutputRange!(Dest, char) && !isArray!Dest))
 {
     alias T = Unqual!Type;
-    ulong bytesWritten = 0;
+    size_t bytesWritten = 0;
 
     size_t getHighestOffsetUntil(T, size_t memberCutoffIndex)()
     if(is(T == struct) || is(T == union))
@@ -813,7 +806,7 @@ if(is(Dest == FileHandle) || (isArray!Dest && is(ArrayTarget!Dest == char)) || (
         return result;
     }
 
-    static if (is(Dest == FileHandle))
+    static if (is(Unqual!Dest == FileHandle))
     {
         void outPolicy(inout(char)[] t)
         {
@@ -894,7 +887,7 @@ if(is(Dest == FileHandle) || (isArray!Dest && is(ArrayTarget!Dest == char)) || (
     {
         char[512] buffer;
         auto result = doubleToString(buffer, t, spec.flags, (spec.flags & FmtFlag.Precision) ? spec.precision : 6);
-        static if(is(Dest == FileHandle))
+        static if(is(Unqual!Dest == FileHandle))
         {
             printFile(dest, result);
         }
