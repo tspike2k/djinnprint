@@ -48,26 +48,14 @@ else
     }
     else version(Windows)
     {
-        // TODO: Test on Windows
-        // TODO: Should we support the ability for the user to overload the console handles? Or is that beyond the scope of this library? See here for more information:
-        // https://docs.microsoft.com/en-us/windows/console/console-handles
-
         private import core.sys.windows.basetsd : HANDLE;
-        private import core.sys.windows.winbase : INVALID_HANDLE_VALUE;
         alias FileHandle = HANDLE;
         __gshared FileHandle stdOut;
         __gshared FileHandle stdErr;
 
-        static this()
+        void init()
         {
-            setFileHandles();
-        }
-
-        void setFileHandles()
-        {
-            // TODO: Using handles from GetStdHandle doesn't seem to work under correctly, at least when testing under wine.
-            // All it will print to the console is FF, strangely enough. Figure out why this isn't working (or if it's a wine issue).
-            import core.sys.windows.winbase : GetStdHandle, STD_ERROR_HANDLE, STD_OUTPUT_HANDLE;
+            import core.sys.windows.winbase : GetStdHandle, STD_ERROR_HANDLE, STD_OUTPUT_HANDLE, INVALID_HANDLE_VALUE;
 
             stdOut = GetStdHandle(STD_OUTPUT_HANDLE);
             assert(stdOut != INVALID_HANDLE_VALUE);

@@ -326,8 +326,8 @@ void formatOptionsExamples()
     formatOut("{0Xp3+}\n", 1);
     formatOut("{0+}\n", -249);
 
-    import core.stdc.stdio;
-    printf("%x\n", 255);
+    //import core.stdc.stdio;
+    //printf("%x\n", 255);
 
     formatOut("{0E}\n", 123.456789);
 
@@ -364,6 +364,11 @@ void padLeftExample()
 
 extern(C) int main()
 {
+    static if(__traits(compiles, djinnprint.init()))
+    {
+        djinnprint.init();
+    }
+
     formatExamples();
 
     formatOutExamples();

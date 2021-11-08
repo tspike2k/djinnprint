@@ -77,13 +77,26 @@ By default, only the first member of a union is formatted. If another union memb
 
 Anonymous unions are a bit trickier. D doesn't provide introspection features for detecting if struct members are part of an anonymous union beyond testing the byte offset of each member. In Phobos, std.format handles anonymous unions by marking members sharing the same memory with __#{overlap ...}__ (see std.format.formatValueImpl() for details). For now, this library simply prints the first member of the anonymous union; the @ToPrint UDA currently can't be used to narrow down which member of an anonymous union should be printed.
 
+### Library initialization
+
+Under normal circumstances the library does not need to perform any initialization logic to run as intended. There are some circumstances, however, where certain library features will not work correctly unless an initialization function is called beforehand. For instance, if the use_cstdio flag is set to false under Windows, the library will need to query Windows for handles to STDOUT and STDERR or any functions that output to either of these streams will not work as expected.
+
+The library will only supply an init function under the conditions where initialization is advisable. This way the user can test at compile-time for the existence of an init function and call it only should that be the case:
+
+```D
+    static if(__traits(compiles, djinnprint.init()))
+    {
+        djinnprint.init();
+    }
+```
+
 ## Status
 
 This project is currently a very early proof-of-concept and is in no way production ready. Further work is planned, however.
 
 ### Todo
 
-* Testing on Windows.
+* Testing on Windows (only tested through Wine on Linux).
 * Figure out a good way to format anonymous union structs members.
 
 ## Installation
