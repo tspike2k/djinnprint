@@ -84,10 +84,10 @@ Under normal circumstances the library does not need to perform any initializati
 The library will only supply an init function under the conditions where initialization is advisable. This way the user can test at compile-time for the existence of an init function and call it only should that be the case:
 
 ```D
-    static if(__traits(compiles, djinnprint.init()))
-    {
-        djinnprint.init();
-    }
+static if(__traits(compiles, djinnprint.init()))
+{
+    djinnprint.init();
+}
 ```
 
 ## Status

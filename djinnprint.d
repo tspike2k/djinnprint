@@ -19,9 +19,9 @@
 // https://forum.dlang.org/thread/odpdhayvxaglheqcntwj@forum.dlang.org
 // https://forum.dlang.org/post/stvphdwgugrlcgfkbyxc@forum.dlang.org
 
-enum ToPrint;
-
 public @nogc nothrow:
+
+enum ToPrint;
 
 private
 {
@@ -29,43 +29,43 @@ private
     enum outputStructAndUnionNames = false; // Determines if formatting a struct or a union should output the name of the data type in the resulting text.
     enum assertOnTruncation        = false; // Trigger an assertion when formatting to a buffer results in a string larger than the buffer size
     enum use_cstdio                = true;  // Use the standard C library output functions when printing to the console
-}
 
-static if(use_cstdio)
-{
-    import core.stdc.stdio : FILE, stdout, stderr;
-    alias FileHandle = FILE*;
-    alias stdOut = stdout;
-    alias stdErr = stderr;
-}
-else
-{
-    version(Posix)
+    static if(use_cstdio)
     {
-        alias FileHandle = int;
-        enum FileHandle stdOut = 1;
-        enum FileHandle stdErr = 2;
-    }
-    else version(Windows)
-    {
-        private import core.sys.windows.basetsd : HANDLE;
-        alias FileHandle = HANDLE;
-        __gshared FileHandle stdOut;
-        __gshared FileHandle stdErr;
-
-        void init()
-        {
-            import core.sys.windows.winbase : GetStdHandle, STD_ERROR_HANDLE, STD_OUTPUT_HANDLE, INVALID_HANDLE_VALUE;
-
-            stdOut = GetStdHandle(STD_OUTPUT_HANDLE);
-            assert(stdOut != INVALID_HANDLE_VALUE);
-            stdErr = GetStdHandle(STD_ERROR_HANDLE);
-            assert(stdErr != INVALID_HANDLE_VALUE);
-        }
+        import core.stdc.stdio : FILE, stdout, stderr;
+        alias FileHandle = FILE*;
+        alias stdOut = stdout;
+        alias stdErr = stderr;
     }
     else
     {
-        static assert(0, "Unsupported OS.");
+        version(Posix)
+        {
+            alias FileHandle = int;
+            enum FileHandle stdOut = 1;
+            enum FileHandle stdErr = 2;
+        }
+        else version(Windows)
+        {
+            private import core.sys.windows.basetsd : HANDLE;
+            alias FileHandle = HANDLE;
+            __gshared FileHandle stdOut;
+            __gshared FileHandle stdErr;
+
+            void init()
+            {
+                import core.sys.windows.winbase : GetStdHandle, STD_ERROR_HANDLE, STD_OUTPUT_HANDLE, INVALID_HANDLE_VALUE;
+
+                stdOut = GetStdHandle(STD_OUTPUT_HANDLE);
+                assert(stdOut != INVALID_HANDLE_VALUE);
+                stdErr = GetStdHandle(STD_ERROR_HANDLE);
+                assert(stdErr != INVALID_HANDLE_VALUE);
+            }
+        }
+        else
+        {
+            static assert(0, "Unsupported OS.");
+        }
     }
 }
 
@@ -224,6 +224,8 @@ if(isIntegral!T)
                 }
             }
 
+            // TODO: printf doesn't prepend hex values with 0x. Should we actually do this? If the user wants that, they can do it trivially enough.
+            // Perhaps this should be it's own flag? Or maybe a library customization option?
             if(base == 16)
             {
                 buffer[--place] = 'x'; // TODO: Does this need to be uppercase when using HexUp?
@@ -780,15 +782,15 @@ if(is(Unqual!Dest == FileHandle) || (isArray!Dest && is(ArrayTarget!Dest == char
     alias T = Unqual!Type;
     size_t bytesWritten = 0;
 
-    size_t getHighestOffsetUntil(T, size_t memberCutoffIndex)()
+    size_t getHighestOffsetUntil(T)(size_t memberCutoffIndex)
     if(is(T == struct) || is(T == union))
     {
         size_t result = 0;
-        static foreach(i, member; T.tupleof)
+        static foreach(i; 0 .. t.tupleof.length)
         {
-            static if(i < memberCutoffIndex)
+            if(i < memberCutoffIndex)
             {
-                result = result < T.tupleof[i].offsetof ? T.tupleof[i].offsetof : result;
+                result = result < t.tupleof[i].offsetof ? t.tupleof[i].offsetof : result;
             }
         }
         return result;
@@ -922,10 +924,9 @@ if(is(Unqual!Dest == FileHandle) || (isArray!Dest && is(ArrayTarget!Dest == char
         static if(outputStructAndUnionNames) outPolicy(T.stringof);
         outPolicy("(");
 
-        auto members = t.tupleof;
-        foreach(i, member; members)
+        foreach(i, member; t.tupleof)
         {
-            static if(i == 0 || t.tupleof[i].offsetof > getHighestOffsetUntil!(T, i))
+            static if(i == 0 || t.tupleof[i].offsetof > getHighestOffsetUntil!T(i))
             {
                 static if(i > 0) outPolicy(", ");
 
@@ -978,7 +979,7 @@ if(is(Unqual!Dest == FileHandle) || (isArray!Dest && is(ArrayTarget!Dest == char
             outPolicy("(");
             foreach(i, member; t.tupleof)
             {
-                static if(i == 0 || t.tupleof[i].offsetof > getHighestOffsetUntil!(T, i))
+                static if(i == 0 || t.tupleof[i].offsetof > getHighestOffsetUntil!T(i))
                 {
                     static if(i > 0) outPolicy(", ");
 
