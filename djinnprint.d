@@ -10,6 +10,9 @@
 
 // - printf doesn't print out the 0x at the beginning of a hex number. Should we not do it this way?
 
+// - toPrintIndex should probably be allowed for structs as well as unions. This way we can have a tagged union type
+//   that would store the type outside of the union members.
+
 // NOTE: The order of members returned by __traits(allMembers) is not guaranteed to be in the order they appear in the struct definition.
 // However, it SEEMS that the .tupleof property is expected (perhaps even required) to be ordered this way. This behavior appears to be expected by
 // some code in Phobos, so we'll rely on this behavior. Should this break in the future, we're going to have to make some changes.
@@ -843,11 +846,14 @@ if(is(Unqual!Dest == FileHandle) || (isArray!Dest && is(ArrayTarget!Dest == char
 
     static if (is(T == enum))
     {
-        static foreach (i, member; EnumMembers!T)
+        outer: final switch(t)
         {
-            if (t == member)
+            static foreach (i, member; EnumMembers!T)
             {
-                outPolicy(__traits(identifier, EnumMembers!T[i]));
+                case EnumMembers!T[i]:
+                {
+                    outPolicy(__traits(identifier, EnumMembers!T[i]));
+                } break outer;
             }
         }
     }

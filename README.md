@@ -97,7 +97,6 @@ This project is currently a very early proof-of-concept and is in no way product
 ### Todo
 
 * Testing on Windows (only tested through Wine on Linux).
-* Figure out a good way to format anonymous union structs members.
 
 ## Installation
 
