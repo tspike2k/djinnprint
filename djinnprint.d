@@ -8,7 +8,9 @@
 
 // - Better handling of structs with anonymous union members (see format() in Phobos and search for `#{overlap`).
 
-// - printf doesn't print out the 0x at the beginning of a hex number. Should we not do it this way?
+// - Better docs on behavior of the "z" format specifier
+
+// - "z" format specifier should work on floats as well.
 
 // - toPrintIndex should probably be allowed for structs as well as unions. This way we can have a tagged union type
 //   that would store the type outside of the union members.
@@ -179,12 +181,14 @@ enum FmtFlag : ubyte
     ENotUp    = 1 << 4,
     Sign      = 1 << 5,
     Precision = 1 << 6,
+    Leading0s = 1 << 7,
 }
 
-char[] intToString(T)(ref char[30] buffer, T n, FmtFlag flags = FmtFlag.None, ubyte precision = 0)
+char[] intToString(T)(ref char[30] buffer, T n, FmtFlag flags = FmtFlag.None, ubyte leadingZeroes = 0)
 if(isIntegral!T)
 {
-    assert(precision < buffer.length - 2, "Integer precision must leave enough room in the buffer for at least two characters.");
+    // TODO: What was the point of this assertion again?
+    //assert(leadingZeroes < buffer.length - 2, "Integer precision must leave enough room in the buffer for at least two characters.");
 
     static if (isSigned!T)
     {
@@ -219,9 +223,9 @@ if(isIntegral!T)
         {
             {
                 auto spaceWritten = buffer.length - place;
-                if(precision > spaceWritten)
+                if(leadingZeroes > spaceWritten)
                 {
-                    auto zeroesToWrite = precision - spaceWritten;
+                    auto zeroesToWrite = leadingZeroes - spaceWritten;
                     buffer[place - zeroesToWrite .. place] = '0';
                     place -= zeroesToWrite;
                 }
@@ -231,7 +235,7 @@ if(isIntegral!T)
             // Perhaps this should be it's own flag? Or maybe a library customization option?
             if(base == 16)
             {
-                buffer[--place] = 'x'; // TODO: Does this need to be uppercase when using HexUp?
+                buffer[--place] = 'x';
                 buffer[--place] = '0';
             }
             else if(base == 10)
@@ -328,7 +332,7 @@ char[] doubleToString(return ref char[512] buf, double fv, FmtFlag flags = FmtFl
         n64 <<= (64 - 56);
         if (pr < 15)
             n64 += (((cast(stbsp__uint64)8) << 56) >> (pr * 4));
-// add leading chars
+        // add leading chars
 
         lead[1 + lead[0]] = '0';
         lead[2 + lead[0]] = 'x';
@@ -871,7 +875,7 @@ if(is(Unqual!Dest == FileHandle) || (isArray!Dest && is(ArrayTarget!Dest == char
     else static if (isIntegral!T)
     {
         char[30] intBuffer;
-        auto result = intToString(intBuffer, t, spec.flags, (spec.flags & FmtFlag.Precision) ? spec.precision : 0);
+        auto result = intToString(intBuffer, t, spec.flags, (spec.flags & FmtFlag.Leading0s) ? spec.leading0s : 0);
         outPolicy(result);
     }
     else static if (is(T == char))
@@ -1037,6 +1041,7 @@ struct FormatSpec
 {
     FmtFlag flags;
     ubyte precision;
+    ubyte leading0s;
 }
 
 uint eatAndReturnArgIndex(ref inout(char)[] commandStr)
@@ -1112,6 +1117,20 @@ FormatSpec getFormatSpec(in char[] commandStr)
                 }
             } break;
 
+            case 'z':
+            {
+                result.flags |= FmtFlag.Leading0s;
+                place++;
+                assert(isDigit(*place) && place < end, "Number expected after leading zeroes token (z) in format specifier.");
+                uint i = 0;
+                while(isDigit(*place) && place < end)
+                {
+                    result.leading0s += (*place - '0') * (10 ^^ i);
+                    place++;
+                    i++;
+                }
+            } break;
+
             default: assert(0, "Unrecognized format specifier"); break;
         }
     }
@@ -1122,12 +1141,12 @@ FormatSpec getFormatSpec(in char[] commandStr)
 size_t safeCopy(char[] dest, inout(char)[] source)
 {
     size_t bytesToCopy = void;
-    bool truncated = false;
+    static if (assertOnTruncation) bool truncated = false;
 
     if(dest.length < source.length)
     {
         bytesToCopy = dest.length;
-        truncated = true;
+        static if (assertOnTruncation) truncated = true;
     }
     else
     {
@@ -1136,7 +1155,10 @@ size_t safeCopy(char[] dest, inout(char)[] source)
 
     static if (assertOnTruncation) assert(!truncated);
 
-    dest[0 .. bytesToCopy] = source[0 .. bytesToCopy];
+    import core.stdc.string : memcpy;
+    // Issue #1: Using memcpy rather than the built-in slice copy operator for compatability with LDC when using the -betterC switch.
+    // https://github.com/tspike2k/djinnprint/issues/1
+    memcpy(dest.ptr, source.ptr, bytesToCopy);
     return bytesToCopy;
 }
 

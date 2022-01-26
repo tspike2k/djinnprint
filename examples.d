@@ -278,9 +278,12 @@ struct BufferRange
 
     void put(in char[] c)
     {
+        // Issue #1: Using memcpy rather than the built-in slice copy operator for compatability with LDC when using the -betterC switch.
+        // https://github.com/tspike2k/djinnprint/issues/1
+        import core.stdc.string : memcpy;
         auto bytesLeft = e.length - count;
         auto toWrite = c.length > bytesLeft ? bytesLeft : c.length;
-        e[count .. count+toWrite] = c[0 .. toWrite];
+        memcpy(&e[count], c.ptr, toWrite*char.sizeof);
         count += toWrite;
     }
 
@@ -321,10 +324,12 @@ void formatOptionsExamples()
     formatOut("Hex version of number {0}: {1x}\n", 255, 255);
     formatOut("Hex (uppercase) version of number {0}: {1X}\n", 255, 255);
 
-    formatOut("{0p3}\n", 1);
-    formatOut("{0p3+}\n", 1);
-    formatOut("{0Xp3+}\n", 1);
+    formatOut("{0z3}\n", 1);
+    formatOut("{0z3+}\n", 1);
+    formatOut("{0Xz3+}\n", 1);
     formatOut("{0+}\n", -249);
+
+    formatOut("{0z3}\n", -12.23789f);
 
     //import core.stdc.stdio;
     //printf("%x\n", 255);
