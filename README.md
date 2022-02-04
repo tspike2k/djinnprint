@@ -48,7 +48,7 @@ Special characters within the format specifier allow the user to configure how v
 * __,__: Real and integer values introduce commas at every three non-fractional digits.
 * __+__: Real and integer values begin with a plus sign when positive.
 * __p*n*__: Real values have their precision set to *n* digits. This determines how many digits should be shown after the decimal point. The default precision for real values is six.
-* __z*n*__: Real and integer values are left-padded with *n* number of zeroes.
+* __z*n*__: Integer values are left-padded with *n* number of zeroes.
 
 ```D
     formatOut("{0X}\n", 255); // prints: 0xFF
