@@ -324,19 +324,22 @@ void formatOptionsExamples()
     formatOut("Hex version of number {0}: {1x}\n", 255, 255);
     formatOut("Hex (uppercase) version of number {0}: {1X}\n", 255, 255);
 
-    formatOut("{0z3}\n", 1);
-    formatOut("{0z3+}\n", 1);
-    formatOut("{0Xz3+}\n", 1);
-    formatOut("{0+}\n", -249);
+    formatOut("{0p3}\n", 1);
+    formatOut("{0p3+}\n", 1);
+    formatOut("{0Xw4+}\n", 255);
+    formatOut("{0xp4}\n", -249);
 
-    formatOut("{0z3}\n", -12.23789f);
+    formatOut("{0p3}\n", -12.23789f);
 
-    //import core.stdc.stdio;
-    //printf("%x\n", 255);
+    formatOut("{0xw12}\n", 255);
+    formatOut("{0xw12p2}\n", -93.23789f);
 
     formatOut("{0E}\n", 123.456789);
 
     formatOut("{0,+}\n", 1234567.89);
+
+    formatOut("{0,+}\n", ulong.max);
+    formatOut("{0X,+}\n", ulong.max);
 
     formatOut("With commas: {0,}\n", long.min+1);
 }

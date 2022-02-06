@@ -8,9 +8,7 @@
 
 // - Better handling of structs with anonymous union members (see format() in Phobos and search for `#{overlap`).
 
-// - Better docs on behavior of the "z" format specifier
-
-// - "z" format specifier should work on floats as well.
+// - 'l' format specifier (left-pads with char c for minimum of n chars)
 
 // - toPrintIndex should probably be allowed for structs as well as unions. This way we can have a tagged union type
 //   that would store the type outside of the union members.
@@ -173,22 +171,21 @@ void printFile(FileHandle file, inout(char)[] msg)
 
 enum FmtFlag : ubyte
 {
-    None      = 0,
-    Hex       = 1 << 0,
-    HexUp     = 1 << 1,
-    Comma     = 1 << 2,
-    ENot      = 1 << 3,
-    ENotUp    = 1 << 4,
-    Sign      = 1 << 5,
-    Precision = 1 << 6,
-    Leading0s = 1 << 7,
+    None       = 0,
+    Hex        = 1 << 0,
+    HexUp      = 1 << 1,
+    Comma      = 1 << 2,
+    ENot       = 1 << 3,
+    ENotUp     = 1 << 4,
+    Sign       = 1 << 5,
+    //Precision  = 1 << 6,
+    //FieldWidth = 1 << 7,
 }
 
 char[] intToString(T)(ref char[30] buffer, T n, FmtFlag flags = FmtFlag.None, ubyte leadingZeroes = 0)
 if(isIntegral!T)
 {
-    // TODO: What was the point of this assertion again?
-    //assert(leadingZeroes < buffer.length - 2, "Integer precision must leave enough room in the buffer for at least two characters.");
+    assert(leadingZeroes < buffer.length - 3, "Integer precision must leave enough room in the buffer for at least three characters.");
 
     static if (isSigned!T)
     {
@@ -214,7 +211,7 @@ if(isIntegral!T)
         buffer[place] = c;
         n /= base;
 
-        if ((flags & FmtFlag.Comma) && loops % 3 == 0)
+        if ((flags & FmtFlag.Comma) && base == 10 && loops % 3 == 0)
         {
             buffer[--place] = ',';
         }
@@ -238,25 +235,23 @@ if(isIntegral!T)
                 buffer[--place] = 'x';
                 buffer[--place] = '0';
             }
-            else if(base == 10)
+
+            static if (isSigned!T)
             {
-                static if (isSigned!T)
+                if (sign < 0)
                 {
-                    if (sign < 0)
-                    {
-                        buffer[--place] = '-';
-                    }
-                    else if(flags & FmtFlag.Sign)
-                    {
-                        buffer[--place] = '+';
-                    }
+                    buffer[--place] = '-';
                 }
-                else
+                else if(flags & FmtFlag.Sign)
                 {
-                    if(flags & FmtFlag.Sign)
-                    {
-                        buffer[--place] = '+';
-                    }
+                    buffer[--place] = '+';
+                }
+            }
+            else
+            {
+                if(flags & FmtFlag.Sign)
+                {
+                    buffer[--place] = '+';
                 }
             }
 
@@ -268,6 +263,18 @@ if(isIntegral!T)
     return buffer[bufferFill .. $];
 }
 
+uint stringToUint(const(char)[] str)
+{
+    uint result = 0;
+    uint n = 0;
+    foreach_reverse(ref c; str)
+    {
+        result += (c - '0') * (10 ^^ n);
+        n++;
+    }
+    return result;
+}
+
 ////
 //
 // Floating point to string conversion code based on stb_sprintf.
@@ -276,7 +283,7 @@ if(isIntegral!T)
 // License: Public domain
 //
 ////
-char[] doubleToString(return ref char[512] buf, double fv, FmtFlag flags = FmtFlag.None, ubyte precision = 6)
+char[] doubleToString(return ref char[512] buf, double fv, FmtFlag flags = FmtFlag.None, ubyte precision = 6, ubyte fieldWidth = 0)
 {
     //char const *h;
     char[512] num = 0;
@@ -296,6 +303,10 @@ char[] doubleToString(return ref char[512] buf, double fv, FmtFlag flags = FmtFl
 
     if(flags & FmtFlag.Comma) fl |= STBSP__TRIPLET_COMMA;
     if(flags & FmtFlag.Sign)  fl |= STBSP__LEADINGPLUS;
+    fl |= STBSP__LEADINGZERO;
+
+    pr = precision;
+    fw = fieldWidth;
 
     void stbsp__cb_buf_clamp(T, U)(ref T cl, ref U v) {
         pragma(inline, true);
@@ -316,7 +327,7 @@ char[] doubleToString(return ref char[512] buf, double fv, FmtFlag flags = FmtFl
     if((flags & FmtFlag.Hex) || (flags & FmtFlag.HexUp)) // NOTE: Hex float formatting
     {
         auto h = (flags & FmtFlag.HexUp) ? intToCharTableUpper : intToCharTableLower;
-        pr = precision;
+
         // read the double into a string
         if (stbsp__real_to_parts(cast(stbsp__int64*)&n64, &dp, fv))
             fl |= STBSP__NEGATIVE;
@@ -382,7 +393,6 @@ char[] doubleToString(return ref char[512] buf, double fv, FmtFlag flags = FmtFl
     else if((flags & FmtFlag.ENot) || (flags & FmtFlag.ENotUp)) // NOTE: Scientific notation
     {
         auto h = (flags & FmtFlag.ENotUp) ? intToCharTableUpper : intToCharTableLower;
-        pr = precision;
         // read the double into a string
         if (stbsp__real_to_str(&sn, &l, num.ptr, &dp, fv, pr | 0x80000000))
             fl |= STBSP__NEGATIVE;
@@ -432,7 +442,6 @@ doexpfromg:
     }
     else // NOTE: Regular float formatting
     {
-        pr = precision;
         // read the double into a string
         if (stbsp__real_to_str(&sn, &l, num.ptr, &dp, fv, pr))
             fl |= STBSP__NEGATIVE;
@@ -758,6 +767,7 @@ private:
 
 import std.traits;
 import std.range;
+import core.stdc.string : memcpy;
 
 alias ArrayTarget(T : U[], U) = U;
 enum bool isCString(T) = is(T == char*) || is(T == const(char)*) || is(T == immutable(char)*);
@@ -875,7 +885,7 @@ if(is(Unqual!Dest == FileHandle) || (isArray!Dest && is(ArrayTarget!Dest == char
     else static if (isIntegral!T)
     {
         char[30] intBuffer;
-        auto result = intToString(intBuffer, t, spec.flags, (spec.flags & FmtFlag.Leading0s) ? spec.leading0s : 0);
+        auto result = intToString(intBuffer, t, spec.flags, spec.fieldWidth);
         outPolicy(result);
     }
     else static if (is(T == char))
@@ -885,14 +895,23 @@ if(is(Unqual!Dest == FileHandle) || (isArray!Dest && is(ArrayTarget!Dest == char
     }
     else static if (is(T == float) || is(T == double))
     {
-        char[512] buffer;
-        auto result = doubleToString(buffer, t, spec.flags, (spec.flags & FmtFlag.Precision) ? spec.precision : 6);
-        static if(is(Unqual!Dest == FileHandle))
+        // TODO: Is this the best idea for formatting floats as hex? Floats are hard to intuit when you see the raw underlying bytes
+/+        if((spec.flags & FmtFlag.Hex) || (spec.flags & FmtFlag.HexUp))
         {
-            printFile(dest, result);
+            char[30] intBuffer;
+            static if (is(T == float))
+                uint temp = void;
+            else
+                ulong temp = void;
+
+            memcpy(&temp, &t, t.sizeof); // NOTE: Since we're type punting, we need to use memcpy.
+            auto result = intToString(intBuffer, temp, spec.flags, spec.precision);
+            outPolicy(result);
         }
-        else
+        else+/
         {
+            char[512] buffer;
+            auto result = doubleToString(buffer, t, spec.flags, spec.precision == 0 ? 6 : spec.precision, spec.fieldWidth);
             outPolicy(result);
         }
     }
@@ -1041,23 +1060,19 @@ struct FormatSpec
 {
     FmtFlag flags;
     ubyte precision;
-    ubyte leading0s;
+    ubyte fieldWidth;
 }
 
 uint eatAndReturnArgIndex(ref inout(char)[] commandStr)
 {
     assert(isDigit(commandStr[0]), "Format command must start with numeric argument index.");
     uint argIndex = 0;
-    size_t end = commandStr.length;
-    foreach(i, c; commandStr)
+    uint end = 0;
+    while(end < commandStr.length && isDigit(commandStr[end]))
     {
-        if(!isDigit(c))
-        {
-            end = i;
-            break;
-        }
-        argIndex += (c - '0') * (10 ^^ i);
+        end++;
     }
+    argIndex = stringToUint(commandStr[0 .. end]);
 
     commandStr = commandStr[end .. $];
     return argIndex;
@@ -1066,6 +1081,17 @@ uint eatAndReturnArgIndex(ref inout(char)[] commandStr)
 FormatSpec getFormatSpec(in char[] commandStr)
 {
     FormatSpec result;
+
+    uint eatStringToUint(ref const(char)* place, const(char)* end)
+    {
+        pragma(inline, true)
+        auto start = place;
+        while(place < end && isDigit(*place))
+        {
+            place++;
+        }
+        return stringToUint(start[0 .. place - start]);
+    }
 
     const(char)* place = commandStr.ptr;
     const(char)* end   = commandStr.ptr + commandStr.length;
@@ -1105,30 +1131,16 @@ FormatSpec getFormatSpec(in char[] commandStr)
 
             case 'p':
             {
-                result.flags |= FmtFlag.Precision;
                 place++;
                 assert(isDigit(*place) && place < end, "Number expected after precision token (p) in format specifier.");
-                uint i = 0;
-                while(isDigit(*place) && place < end)
-                {
-                    result.precision += (*place - '0') * (10 ^^ i);
-                    place++;
-                    i++;
-                }
+                result.precision = cast(ubyte)eatStringToUint(place, end);
             } break;
 
-            case 'z':
+            case 'w':
             {
-                result.flags |= FmtFlag.Leading0s;
                 place++;
-                assert(isDigit(*place) && place < end, "Number expected after leading zeroes token (z) in format specifier.");
-                uint i = 0;
-                while(isDigit(*place) && place < end)
-                {
-                    result.leading0s += (*place - '0') * (10 ^^ i);
-                    place++;
-                    i++;
-                }
+                assert(isDigit(*place) && place < end, "Number expected after field width token (w) in format specifier.");
+                result.fieldWidth = cast(ubyte)eatStringToUint(place, end);
             } break;
 
             default: assert(0, "Unrecognized format specifier"); break;
@@ -1155,7 +1167,6 @@ size_t safeCopy(char[] dest, inout(char)[] source)
 
     static if (assertOnTruncation) assert(!truncated);
 
-    import core.stdc.string : memcpy;
     // Issue #1: Using memcpy rather than the built-in slice copy operator for compatability with LDC when using the -betterC switch.
     // https://github.com/tspike2k/djinnprint/issues/1
     memcpy(dest.ptr, source.ptr, bytesToCopy);
