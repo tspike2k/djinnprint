@@ -324,24 +324,29 @@ void formatOptionsExamples()
     formatOut("Hex version of number {0}: {1x}\n", 255, 255);
     formatOut("Hex (uppercase) version of number {0}: {1X}\n", 255, 255);
 
-    formatOut("{0p3}\n", 1);
-    formatOut("{0p3+}\n", 1);
-    formatOut("{0Xw4+}\n", 255);
-    formatOut("{0xp4}\n", -249);
+    enum testInteger = 249;
+    formatOut("Various ways of formatting {0}:\n", testInteger);
+    formatOut("  {{0p4}   {0p4}\n", testInteger);
+    formatOut("  {{0z4+}  {0z4+}\n", testInteger);
+    formatOut("  {{0Xz2+} {0Xz2+}\n", testInteger);
+    formatOut("  {{0xp4}  {0xp4}\n", testInteger);
+    formatOut("  {{0xz12} {0xz12}\n", testInteger);
+    printOut("\n");
 
-    formatOut("{0p3}\n", -12.23789f);
+    enum testFloat = 1224.23789f;
+    formatOut("Various ways of formatting {0}:\n", testFloat);
+    formatOut("  {{0p3}     {0p3}\n", testFloat);
+    formatOut("  {{0xz12p2} {0xz12p2}\n", testFloat);
+    formatOut("  {{0z12p2}  {0z12p2}\n", testFloat);
+    formatOut("  {{0E}      {0E}\n", testFloat);
+    formatOut("  {{0E,+}    {0E,+}\n", testFloat);
+    formatOut("  {{0,+}     {0,+}\n", testFloat);
+    printOut("\n");
 
-    formatOut("{0xw12}\n", 255);
-    formatOut("{0xw12p2}\n", -93.23789f);
-
-    formatOut("{0E}\n", 123.456789);
-
-    formatOut("{0,+}\n", 1234567.89);
-
-    formatOut("{0,+}\n", ulong.max);
-    formatOut("{0X,+}\n", ulong.max);
-
-    formatOut("With commas: {0,}\n", long.min+1);
+    printOut("Misc formatting examples:\n");
+    formatOut("  {{0,+}  {0,+}\n", ulong.max);
+    formatOut("  {{0X,+} {0X,+}\n", ulong.max);
+    formatOut("  {{0,}   {0,}\n", long.min+1);
 }
 
 void padLeftExample()

@@ -47,13 +47,14 @@ Special characters within the format specifier allow the user to configure how v
 * __E__: Real values are formatted using uppercase scientific notation.
 * __,__: Real and integer values introduce commas at every three non-fractional digits.
 * __+__: Real and integer values begin with a plus sign when positive.
-* __p*n*__: Real and hexadecimal values have their precision set to *n* digits. For real values, this determines how many digits should be shown after the decimal point. The default precision for real values is six. For hexadecimal values, this determines the minimum number of digits to be shown after the sign character (if applicable) and the leading "0x" designation. If the result is smaller than the minimum number of digits, trailing zeroes are added as needed.
+* __p*n*__: Real values have their precision set to *n* digits. This determines how many digits should be shown after the decimal point. The default precision for real values is six.
+* __z*n*__: Set the desired minimum leading zeroes to *n* digits. This determines determines the number of digits to be printed after the sign character (if applicable) and the leading "0x" designator (if using hexadecimal formatting). If the result is smaller than the minimum number of digits, trailing zeroes are added as needed.
 
 ```D
     formatOut("{0X}\n", 255); // prints: 0xFF
     formatOut("{0,+}\n", 12300); // prints: +12,300
-    formatOut("{0p6x}\n", 12); // prints: 0x00000c
-    formatOut("{0p2}\n", 3.14159); // prints: 3.14
+    formatOut("{0z6x}\n", 12); // prints: 0x00000c
+    formatOut("{0p2}\n", 3.14159); // prints: 3.14q
     formatOut("{0e}\n", 3.14159); // prints: 3.141590e+00
 ```
 
@@ -97,6 +98,7 @@ This project is currently a very early proof-of-concept and is in no way product
 ### Todo
 
 * Testing on Windows (only tested through Wine on Linux).
+* Allow toPrintIndex to work for structs as well as unions. This would enable users to specify how to format, say, a custom tagged union type.
 
 ## Installation
 

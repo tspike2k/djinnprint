@@ -2,16 +2,17 @@
 // Copyright: Copyright (c) 2020
 // License:   Boost Software License 1.0 (https://www.boost.org/LICENSE_1_0.txt)
 
-// TODO:
+/+
+TODO:
+ - Testing on Windows
 
-// - Testing on Windows
+ - Better handling of structs with anonymous union members (see format() in Phobos and search for `#{overlap`).
 
-// - Better handling of structs with anonymous union members (see format() in Phobos and search for `#{overlap`).
+ - 'l' format specifier (left-pads with char c for minimum of n chars)?
 
-// - 'l' format specifier (left-pads with char c for minimum of n chars)
-
-// - toPrintIndex should probably be allowed for structs as well as unions. This way we can have a tagged union type
-//   that would store the type outside of the union members.
+ - toPrintIndex should probably be allowed for structs as well as unions. This way we can have a tagged union type
+   that would store the type outside of the union members.
++/
 
 // NOTE: The order of members returned by __traits(allMembers) is not guaranteed to be in the order they appear in the struct definition.
 // However, it SEEMS that the .tupleof property is expected (perhaps even required) to be ordered this way. This behavior appears to be expected by
@@ -178,8 +179,6 @@ enum FmtFlag : ubyte
     ENot       = 1 << 3,
     ENotUp     = 1 << 4,
     Sign       = 1 << 5,
-    //Precision  = 1 << 6,
-    //FieldWidth = 1 << 7,
 }
 
 char[] intToString(T)(ref char[30] buffer, T n, FmtFlag flags = FmtFlag.None, ubyte leadingZeroes = 0)
@@ -283,7 +282,7 @@ uint stringToUint(const(char)[] str)
 // License: Public domain
 //
 ////
-char[] doubleToString(return ref char[512] buf, double fv, FmtFlag flags = FmtFlag.None, ubyte precision = 6, ubyte fieldWidth = 0)
+char[] doubleToString(return ref char[512] buf, double fv, FmtFlag flags = FmtFlag.None, ubyte precision = 6, ubyte leadingZeroes = 0)
 {
     //char const *h;
     char[512] num = 0;
@@ -306,7 +305,7 @@ char[] doubleToString(return ref char[512] buf, double fv, FmtFlag flags = FmtFl
     fl |= STBSP__LEADINGZERO;
 
     pr = precision;
-    fw = fieldWidth;
+    fw = leadingZeroes;
 
     void stbsp__cb_buf_clamp(T, U)(ref T cl, ref U v) {
         pragma(inline, true);
@@ -577,7 +576,8 @@ scopy:
         // get fw=leading/trailing space, pr=leading zeros
         if (pr < cast(stbsp__int32)l)
             pr = l;
-        n = pr + lead[0] + tail[0] + tz;
+        //n = pr + lead[0] + tail[0] + tz; // Original line
+        n = pr + tail[0] + tz; // NOTE: For our lib, we want to ignore the leading when calculating the trailing zeroes
         if (fw < cast(stbsp__int32)n)
             fw = n;
         fw -= n;
@@ -885,7 +885,7 @@ if(is(Unqual!Dest == FileHandle) || (isArray!Dest && is(ArrayTarget!Dest == char
     else static if (isIntegral!T)
     {
         char[30] intBuffer;
-        auto result = intToString(intBuffer, t, spec.flags, spec.fieldWidth);
+        auto result = intToString(intBuffer, t, spec.flags, spec.leadingZeroes);
         outPolicy(result);
     }
     else static if (is(T == char))
@@ -895,25 +895,9 @@ if(is(Unqual!Dest == FileHandle) || (isArray!Dest && is(ArrayTarget!Dest == char
     }
     else static if (is(T == float) || is(T == double))
     {
-        // TODO: Is this the best idea for formatting floats as hex? Floats are hard to intuit when you see the raw underlying bytes
-/+        if((spec.flags & FmtFlag.Hex) || (spec.flags & FmtFlag.HexUp))
-        {
-            char[30] intBuffer;
-            static if (is(T == float))
-                uint temp = void;
-            else
-                ulong temp = void;
-
-            memcpy(&temp, &t, t.sizeof); // NOTE: Since we're type punting, we need to use memcpy.
-            auto result = intToString(intBuffer, temp, spec.flags, spec.precision);
-            outPolicy(result);
-        }
-        else+/
-        {
-            char[512] buffer;
-            auto result = doubleToString(buffer, t, spec.flags, spec.precision == 0 ? 6 : spec.precision, spec.fieldWidth);
-            outPolicy(result);
-        }
+        char[512] buffer;
+        auto result = doubleToString(buffer, t, spec.flags, spec.precision == 0 ? 6 : spec.precision, spec.leadingZeroes);
+        outPolicy(result);
     }
     else static if(isCString!T)
     {
@@ -1060,7 +1044,7 @@ struct FormatSpec
 {
     FmtFlag flags;
     ubyte precision;
-    ubyte fieldWidth;
+    ubyte leadingZeroes;
 }
 
 uint eatAndReturnArgIndex(ref inout(char)[] commandStr)
@@ -1132,15 +1116,15 @@ FormatSpec getFormatSpec(in char[] commandStr)
             case 'p':
             {
                 place++;
-                assert(isDigit(*place) && place < end, "Number expected after precision token (p) in format specifier.");
+                assert(place < end && isDigit(*place), "Number expected after precision token (p) in format specifier.");
                 result.precision = cast(ubyte)eatStringToUint(place, end);
             } break;
 
-            case 'w':
+            case 'z':
             {
                 place++;
-                assert(isDigit(*place) && place < end, "Number expected after field width token (w) in format specifier.");
-                result.fieldWidth = cast(ubyte)eatStringToUint(place, end);
+                assert(place < end && isDigit(*place), "Number expected after leading-zeroes token (z) in format specifier.");
+                result.leadingZeroes = cast(ubyte)eatStringToUint(place, end);
             } break;
 
             default: assert(0, "Unrecognized format specifier"); break;
