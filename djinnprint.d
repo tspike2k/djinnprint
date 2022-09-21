@@ -6,12 +6,27 @@
 TODO:
  - Testing on Windows
 
- - Better handling of structs with anonymous union members (see format() in Phobos and search for `#{overlap`).
+ - Consider switching to using ranges ONLY. The issue with this is that std.range.put isn't nothrow @nogc.
 
- - 'l' format specifier (left-pads with char c for minimum of n chars)?
+ - Class printing
+
+ - Prefer using toString method if one exists
+
+ - Better handling of structs with anonymous union members (see format() in Phobos and search for `#{overlap`)?
+
+ - Remove printing to a file? It's a little out of scope, isn't it? And formatting a string directly to a file is very naive. Typically, you want to buffer up output before flushing to a file.
+   Then again, allowing that does give us the ability to write to stdout/stderr easily, so perhaps we should keep this.
+
+ - Format specifier for left-padding with char __c__ for minimum of __n__ chars)?
+
+ - Format specifier for converting a string to lowercase/uppercase?
 
  - toPrintIndex should probably be allowed for structs as well as unions. This way we can have a tagged union type
    that would store the type outside of the union members.
+
+ - It seems that Phobos convention tends to provide toString methods that take OutputRanges and format directly into them.
+   Perhaps we should look into supporting this somehow? Obviously, the toString method would need to be marked as "nothrow @nogc",
+   so maybe that's a bit too much to ask for people to do? Then again, if it's there, we could use it. We'll see.
 +/
 
 // NOTE: The order of members returned by __traits(allMembers) is not guaranteed to be in the order they appear in the struct definition.
@@ -25,7 +40,7 @@ TODO:
 
 public @nogc nothrow:
 
-enum ToPrint;
+enum ToPrint; // TODO: Do we still need this? We could force everything with specific requirements to supply a toString method.
 
 private
 {
@@ -82,10 +97,23 @@ char[] format(Args...)(inout(char)[] fmt, char[] buffer, Args args)
 
     mixin(printCommon);
 
-    size_t zeroIndex = bufferWritten < buffer.length ? bufferWritten : buffer.length - 1;
+    size_t zeroIndex = bufferWritten < buffer.length ? bufferWritten : buffer.length - 1; // TODO: Can't we assert this is always true and let the zero index always is assigned to bufferWritten?
     buffer[zeroIndex] = '\0';
 
     return buffer[0..zeroIndex];
+}
+
+struct ArrayRange
+{
+    nothrow @nogc:
+
+    char[] dest;
+    uint bytesWritten;
+
+    void put(const(char)[] source)
+    {
+        bytesWritten += safeCopy(dest[bytesWritten .. $], source[0 .. $]);
+    }
 }
 
 char[] format(U, Args...)(inout(char)[] fmt, ref U buffer, Args args)
@@ -98,6 +126,8 @@ if(isOutputRange!(U, char) && !isCharArray!U)
 
     mixin(printCommon);
 
+    // TODO: This is actually a bit naive. The user would probably only want the substring what was just written to, not the entire contents of the range.
+    // Plus, some ranges don't provide slicing.
     return buffer[0..$];
 }
 
@@ -181,9 +211,11 @@ enum FmtFlag : ubyte
     Sign       = 1 << 5,
 }
 
-char[] intToString(T)(ref char[30] buffer, T n, FmtFlag flags = FmtFlag.None, ubyte leadingZeroes = 0)
+char[] intToString(T)(ref char[30] buffer, T num, FmtFlag flags = FmtFlag.None, ubyte leadingZeroes = 0)
 if(isIntegral!T)
 {
+    Unqual!T n = num;
+
     assert(leadingZeroes < buffer.length - 3, "Integer precision must leave enough room in the buffer for at least three characters.");
 
     static if (isSigned!T)
@@ -1136,20 +1168,13 @@ FormatSpec getFormatSpec(in char[] commandStr)
 
 size_t safeCopy(char[] dest, inout(char)[] source)
 {
-    size_t bytesToCopy = void;
-    static if (assertOnTruncation) bool truncated = false;
+    size_t bytesToCopy = source.length;
+    static if (assertOnTruncation) assert(dest.length >= source.length);
 
     if(dest.length < source.length)
     {
         bytesToCopy = dest.length;
-        static if (assertOnTruncation) truncated = true;
     }
-    else
-    {
-        bytesToCopy = source.length;
-    }
-
-    static if (assertOnTruncation) assert(!truncated);
 
     // Issue #1: Using memcpy rather than the built-in slice copy operator for compatability with LDC when using the -betterC switch.
     // https://github.com/tspike2k/djinnprint/issues/1
@@ -1157,7 +1182,8 @@ size_t safeCopy(char[] dest, inout(char)[] source)
     return bytesToCopy;
 }
 
-enum printCommon = `
+// TODO: We could probably simplify all this if we used slices instead of fmtCursor/fmtCopyToBufferIndex.
+enum printCommon = q{
     size_t fmtCursor = 0;
     size_t fmtCopyToBufferIndex = 0;
 
@@ -1222,7 +1248,7 @@ enum printCommon = `
     fmtCursor = fmt.length;
 
     mixin(outputPolicy);
-`;
+};
 
 void stbsp__lead_sign(stbsp__uint32 fl, char *sign)
 {

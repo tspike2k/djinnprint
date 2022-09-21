@@ -13,32 +13,7 @@ crashing into the Nevada
 desert had turned out to
 be Darc Seed, and evil
 alien creature with
-horrible powers. By
-shooting strange magnetic
-rays, Darc Seed had
-turned the helpless
-nation into zombies and
-had brought the Stature of
-Liberty to life to do his
-dirty work.  These rays
-had also given him
-control over many deadly
-weapons, but none were
-more powerful than the
-legendary samurai sword,
-Shura. When the great
-head of the samurai,
-Namakubi, heard the
-sword had fallen into
-evil hands, he set off
-immediately for the
-United States. For only he
-Possessed the strength
-and knowledge needed to
-recapture the magical
-sword and free the U.S.
-from the evil clutches of
-Darc Seed.`;
+horrible powers.`;
 
 enum TestEnum
 {
@@ -76,7 +51,7 @@ void formatExamples()
 {
     printOut("----format(...) Examples----\n");
 
-    char[512] buffer;
+    char[128] buffer;
 
     string formatString = "Arguments can be printed out of order: {2} {0} {1}\n";
     int t = 42;
@@ -125,6 +100,8 @@ void formatExamples()
     printOut(format("outer == {0}\n", buffer, outer));
 
     printOut(format("The address of outer is {0}\n", buffer, &outer));
+
+    printOut(format("UTF8 exameple: {0}\n", buffer, "暴れん坊天狗"));
 }
 
 void formatOutExamples()
@@ -178,6 +155,8 @@ void formatOutExamples()
     formatOut("outer == {0}\n", outer);
 
     formatOut("The address of outer is {0}\n", &outer);
+
+    formatOut("UTF8 exameple: {0}\n", "暴れん坊天狗");
 }
 
 enum EntityType
