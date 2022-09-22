@@ -6,8 +6,6 @@
 TODO:
  - Testing on Windows
 
- - Consider switching to using ranges ONLY. The issue with this is that std.range.put isn't nothrow @nogc.
-
  - Class printing
 
  - Prefer using toString method if one exists
@@ -88,90 +86,120 @@ private
     }
 }
 
-char[] format(Args...)(inout(char)[] fmt, char[] buffer, Args args)
+char[] format(Args...)(const(char)[] fmt, char[] buffer, Args args)
 {
-    size_t bufferWritten = 0;
+    ArrayRange range;
+    range.buffer = buffer[];
+    assert(buffer.length > 0); // TODO: Should we allow this and just return if buffer is empty?
 
-    enum outputPolicy = `bufferWritten += safeCopy(buffer[bufferWritten..buffer.length], fmt[fmtCopyToBufferIndex .. fmtCursor]);`;
-    enum formatPolicy = `bufferWritten += formatArg(args[i], formatSpec, buffer[bufferWritten .. buffer.length]);`;
-
-    mixin(printCommon);
-
-    size_t zeroIndex = bufferWritten < buffer.length ? bufferWritten : buffer.length - 1; // TODO: Can't we assert this is always true and let the zero index always is assigned to bufferWritten?
-    buffer[zeroIndex] = '\0';
-
-    return buffer[0..zeroIndex];
+    format(fmt, range, args);
+    range.buffer[range.bytesWritten] = '\0';
+    return range.buffer[0..range.bytesWritten];
 }
 
-struct ArrayRange
+void format(Dest, Args...)(const(char)[] fmt, ref Dest dest, Args args)
+if(isOutputRange!(Dest, char) && !isArray!Dest)
 {
-    nothrow @nogc:
+    // TODO: Can this be simplified by using slices instead of fmtCursor/fmtCopyToBufferIndex?
+    size_t fmtCursor = 0;
+    size_t fmtCopyToBufferIndex = 0;
 
-    char[] dest;
-    uint bytesWritten;
+    enum outputPolicy = `dest.put(fmt[fmtCopyToBufferIndex .. fmtCursor]);`;
 
-    void put(const(char)[] source)
+    while(fmtCursor < fmt.length)
     {
-        bytesWritten += safeCopy(dest[bytesWritten .. $], source[0 .. $]);
+        if (fmt[fmtCursor] == '{')
+        {
+            if (fmtCursor < fmt.length - 1 && fmt[fmtCursor+1] == '{')
+            {
+                fmtCursor++;
+                mixin(outputPolicy);
+                fmtCursor++;
+                fmtCopyToBufferIndex = fmtCursor;
+            }
+            else
+            {
+                mixin(outputPolicy);
+
+                fmtCursor++;
+                size_t commandStart = fmtCursor;
+                size_t commandEnd   = fmtCursor;
+                while(fmtCursor < fmt.length)
+                {
+                    if (fmt[fmtCursor] == '}')
+                    {
+                        commandEnd = fmtCursor;
+                        fmtCursor++;
+                        break;
+                    }
+                    fmtCursor++;
+                }
+
+                fmtCopyToBufferIndex = fmtCursor;
+
+                auto formatCommand = fmt[commandStart .. commandEnd];
+
+                auto argIndex = eatAndReturnArgIndex(formatCommand);
+                assert(argIndex < args.length, "ERR: Format index exceeds length of provided arguments.");
+                auto formatSpec = getFormatSpec(formatCommand);
+
+                // NOTE: Variadic template argument indexing based on std.format.getNth(...) from Phobos.
+                outer: switch(argIndex)
+                {
+                    static foreach(i, _; Args)
+                    {
+                        case i:
+                        {
+                            formatArg(args[i], formatSpec, dest);
+                        } break outer;
+                    }
+
+                    default:
+                    {
+                        assert(0,"ERR: Unable to access variadic argument.");
+                    } break outer;
+                }
+            }
+        }
+        else
+            fmtCursor++;
     }
+    fmtCursor = fmt.length;
+
+    mixin(outputPolicy);
 }
 
-char[] format(U, Args...)(inout(char)[] fmt, ref U buffer, Args args)
-if(isOutputRange!(U, char) && !isCharArray!U)
+void formatOut(Args...)(const(char)[] fmt, Args args)
 {
-    size_t bufferWritten = 0;
-
-    enum outputPolicy = `buffer.put(fmt[fmtCopyToBufferIndex .. fmtCursor]);`;
-    enum formatPolicy = `formatArg(args[i], formatSpec, buffer);`;
-
-    mixin(printCommon);
-
-    // TODO: This is actually a bit naive. The user would probably only want the substring what was just written to, not the entire contents of the range.
-    // Plus, some ranges don't provide slicing.
-    return buffer[0..$];
+    auto range = FileRange(stdOut);
+    format(fmt, range, args);
 }
 
-void formatOut(Args...)(inout(char)[] fmt, Args args)
+void formatErr(Args...)(const(char)[] fmt, Args args)
 {
-    auto file = stdOut;
-
-    enum outputPolicy = `printFile(file, fmt.ptr[fmtCopyToBufferIndex .. fmtCursor]);`;
-    enum formatPolicy = `formatArg(args[i], formatSpec, file);`;
-
-    mixin(printCommon);
+    auto range = FileRange(stdErr);
+    format(fmt, range, args);
 }
 
-void formatErr(Args...)(inout(char)[] fmt, Args args)
+void formatFile(Args...)(FileHandle file, const(char)[] fmt, Args args)
 {
-    auto file = stdErr;
-
-    enum outputPolicy = `printFile(file, fmt.ptr[fmtCopyToBufferIndex .. fmtCursor]);`;
-    enum formatPolicy = `formatArg(args[i], formatSpec, file);`;
-
-    mixin(printCommon);
+    auto range = FileRange(file);
+    format(fmt, range, args);
 }
 
-void formatFile(Args...)(FileHandle file, inout(char)[] fmt, Args args)
-{
-    enum outputPolicy = `printFile(file, fmt[fmtCopyToBufferIndex .. fmtCursor]);`;
-    enum formatPolicy = `formatArg(args[i], formatSpec, file);`;
-
-    mixin(printCommon);
-}
-
-void printOut(inout(char)[] msg)
+void printOut(const(char)[] msg)
 {
     FileHandle file = stdOut;
     printFile(file, msg);
 }
 
-void printErr(inout(char)[] msg)
+void printErr(const(char)[] msg)
 {
     FileHandle file = stdErr;
     printFile(file, msg);
 }
 
-void printFile(FileHandle file, inout(char)[] msg)
+void printFile(FileHandle file, const(char)[] msg)
 {
     static if(use_cstdio)
     {
@@ -798,7 +826,7 @@ scopy:
 private:
 
 import std.traits;
-import std.range;
+import std.range : isInputRange, isOutputRange, isInfinite;
 import core.stdc.string : memcpy;
 
 alias ArrayTarget(T : U[], U) = U;
@@ -808,6 +836,41 @@ enum bool isCharArray(T) = isArray!T && (is(ArrayTarget!(T) == char) || is(Array
 template useQuotes(T)
 {
     enum useQuotes = isCharArray!T || isCString!T;
+}
+
+struct ArrayRange
+{
+    nothrow @nogc:
+
+    char[] buffer;
+    uint bytesWritten;
+
+    void put(const(char)[] source)
+    {
+        auto dest = buffer[bytesWritten .. $-1]; // NOTE: Leave at least one char at the end to place the null terminator.
+        static if (assertOnTruncation) assert(source.length <= dest.length);
+
+        size_t bytesToCopy = source.length;
+        if(dest.length < bytesToCopy)
+            bytesToCopy = dest.length;
+
+        // Issue #1: Using memcpy rather than the built-in slice copy operator for compatability with LDC when using the -betterC switch.
+        // https://github.com/tspike2k/djinnprint/issues/1
+        memcpy(dest.ptr, source.ptr, bytesToCopy);
+        bytesWritten += bytesToCopy;
+    }
+}
+
+struct FileRange
+{
+    nothrow @nogc:
+
+    FileHandle handle;
+
+    void put(const(char)[] source)
+    {
+        printFile(handle, source);
+    }
 }
 
 immutable char[] intToCharTableLower = "0123456789abcdefxp";
@@ -825,12 +888,12 @@ size_t length(const(char*) s)
     return result;
 }
 
-size_t formatArg(Type, Dest)(ref Type t, in FormatSpec spec, auto ref Dest dest)
-if(is(Unqual!Dest == FileHandle) || (isArray!Dest && is(ArrayTarget!Dest == char)) || (isOutputRange!(Dest, char) && !isArray!Dest))
+void formatArg(Type, Dest)(ref Type t, in FormatSpec spec, ref Dest dest)
+if(isOutputRange!(Dest, char) && !isArray!Dest)
 {
     alias T = Unqual!Type;
-    size_t bytesWritten = 0;
 
+    // NOTE: Used to detect anonymous unions
     size_t getHighestOffsetUntil(T)(size_t memberCutoffIndex)
     if(is(T == struct) || is(T == union))
     {
@@ -845,51 +908,6 @@ if(is(Unqual!Dest == FileHandle) || (isArray!Dest && is(ArrayTarget!Dest == char
         return result;
     }
 
-    static if (is(Unqual!Dest == FileHandle))
-    {
-        void outPolicy(inout(char)[] t)
-        {
-            pragma(inline, true);
-            printFile(dest, t);
-            bytesWritten += t.length;
-        }
-
-        void formatPolicy(U)(ref U val)
-        {
-            pragma(inline, true);
-            bytesWritten += formatArg(val, spec, dest);
-        }
-    }
-    else static if(isOutputRange!(Dest, char) && !isArray!Dest)
-    {
-        void outPolicy(inout(char)[] t)
-        {
-            pragma(inline, true)
-            dest.put(t);
-            bytesWritten += t.length;
-        }
-
-        void formatPolicy(U)(ref U val)
-        {
-            pragma(inline, true);
-            bytesWritten += formatArg(val, spec, dest);
-        }
-    }
-    else
-    {
-        void outPolicy(inout(char)[] t)
-        {
-            pragma(inline, true)
-            bytesWritten += safeCopy(dest[bytesWritten .. $], t);
-        }
-
-        void formatPolicy(U)(ref U val)
-        {
-            pragma(inline, true);
-            bytesWritten += formatArg(val, spec, dest[bytesWritten .. $]);
-        }
-    }
-
     static if (is(T == enum))
     {
         outer: final switch(t)
@@ -898,7 +916,7 @@ if(is(Unqual!Dest == FileHandle) || (isArray!Dest && is(ArrayTarget!Dest == char
             {
                 case EnumMembers!T[i]:
                 {
-                    outPolicy(__traits(identifier, EnumMembers!T[i]));
+                    dest.put(__traits(identifier, EnumMembers!T[i]));
                 } break outer;
             }
         }
@@ -907,35 +925,35 @@ if(is(Unqual!Dest == FileHandle) || (isArray!Dest && is(ArrayTarget!Dest == char
     {
         if(t)
         {
-            outPolicy("true");
+            dest.put("true");
         }
         else
         {
-            outPolicy("false");
+            dest.put("false");
         }
     }
     else static if (isIntegral!T)
     {
         char[30] intBuffer;
         auto result = intToString(intBuffer, t, spec.flags, spec.leadingZeroes);
-        outPolicy(result);
+        dest.put(result);
     }
     else static if (is(T == char))
     {
         char[1] temp = t;
-        outPolicy(temp);
+        dest.put(temp);
     }
     else static if (is(T == float) || is(T == double))
     {
         char[512] buffer;
         auto result = doubleToString(buffer, t, spec.flags, spec.precision == 0 ? 6 : spec.precision, spec.leadingZeroes);
-        outPolicy(result);
+        dest.put(result);
     }
     else static if(isCString!T)
     {
         size_t srcLength = 0;
         while(t[srcLength] != '\0') srcLength++;
-        outPolicy(t[0 .. srcLength]);
+        dest.put(t[0 .. srcLength]);
     }
     else static if(isCharArray!T)
     {
@@ -948,57 +966,57 @@ if(is(Unqual!Dest == FileHandle) || (isArray!Dest && is(ArrayTarget!Dest == char
                 break;
             }
         }
-        outPolicy(t[0 .. endIndex]);
+        dest.put(t[0 .. endIndex]);
     }
     else static if(isInputRange!T)
     {
         static assert(!isInfinite!T);
 
-        outPolicy("[");
+        dest.put("[");
         size_t i = 0;
         foreach(ref v; t)
         {
-            if(i > 0) outPolicy(", ");
-            formatPolicy(v);
+            if(i > 0) dest.put(", ");
+            formatArg(v, spec, dest);
             i++;
         }
-        outPolicy("]");
+        dest.put("]");
     }
     else static if(is(T == struct))
     {
-        static if(outputStructAndUnionNames) outPolicy(T.stringof);
-        outPolicy("(");
+        static if(outputStructAndUnionNames) dest.put(T.stringof);
+        dest.put("(");
 
         foreach(i, member; t.tupleof)
         {
             static if(i == 0 || t.tupleof[i].offsetof > getHighestOffsetUntil!T(i))
             {
-                static if(i > 0) outPolicy(", ");
+                static if(i > 0) dest.put(", ");
 
                 enum surroundWithQuotes = useQuotes!(typeof(member));
-                static if(surroundWithQuotes) outPolicy("\"");
-                formatPolicy(member);
-                static if(surroundWithQuotes) outPolicy("\"");
+                static if(surroundWithQuotes) dest.put("\"");
+                formatArg(member, spec, dest);
+                static if(surroundWithQuotes) dest.put("\"");
             }
         }
-        outPolicy(")");
+        dest.put(")");
     }
     else static if(is(T == union))
     {
         alias taggedToPrintMembers = getSymbolsByUDA!(T, ToPrint);
         static if (taggedToPrintMembers.length > 0)
         {
-            static if(outputStructAndUnionNames) outPolicy(T.stringof);
-            outPolicy("(");
+            static if(outputStructAndUnionNames) dest.put(T.stringof);
+            dest.put("(");
             static foreach(i, member; taggedToPrintMembers)
             {{
                 enum surroundWithQuotes = useQuotes!(typeof(member));
-                static if(surroundWithQuotes) outPolicy("\"");
-                formatPolicy(t.tupleof[i]);
-                static if(surroundWithQuotes) outPolicy("\"");
-                static if (i < taggedToPrintMembers.length - 1) outPolicy(", ");
+                static if(surroundWithQuotes) dest.put("\"");
+                formatArg(t.tupleof[i], spec, dest);
+                static if(surroundWithQuotes) dest.put("\"");
+                static if (i < taggedToPrintMembers.length - 1) dest.put(", ");
             }}
-            outPolicy(")");
+            dest.put(")");
         }
         else static if(__traits(hasMember, T, "toPrintIndex"))
         {
@@ -1009,9 +1027,9 @@ if(is(Unqual!Dest == FileHandle) || (isArray!Dest && is(ArrayTarget!Dest == char
                     case i:
                     {
                         enum surroundWithQuotes = useQuotes!(typeof(m));
-                        static if(surroundWithQuotes) outPolicy("\"");
-                        formatPolicy(t.tupleof[i]);
-                        static if(surroundWithQuotes) outPolicy("\"");
+                        static if(surroundWithQuotes) dest.put("\"");
+                        formatArg(t.tupleof[i], spec, dest);
+                        static if(surroundWithQuotes) dest.put("\"");
                     } break outer;
                 }
 
@@ -1020,51 +1038,49 @@ if(is(Unqual!Dest == FileHandle) || (isArray!Dest && is(ArrayTarget!Dest == char
         }
         else
         {
-            static if (outputStructAndUnionNames) outPolicy(T.stringof);
-            outPolicy("(");
+            static if (outputStructAndUnionNames) dest.put(T.stringof);
+            dest.put("(");
             foreach(i, member; t.tupleof)
             {
                 static if(i == 0 || t.tupleof[i].offsetof > getHighestOffsetUntil!T(i))
                 {
-                    static if(i > 0) outPolicy(", ");
+                    static if(i > 0) dest.put(", ");
 
                     enum surroundWithQuotes = useQuotes!(typeof(member));
-                    static if(surroundWithQuotes) outPolicy("\"");
-                    formatPolicy(t.tupleof[i]);
-                    static if(surroundWithQuotes) outPolicy("\"");
+                    static if(surroundWithQuotes) dest.put("\"");
+                    formatArg(t.tupleof[i], spec, dest);
+                    static if(surroundWithQuotes) dest.put("\"");
                 }
             }
-            outPolicy(")");
+            dest.put(")");
         }
     }
     else static if(isArray!T)
     {
-        outPolicy("[");
+        dest.put("[");
 
         foreach(i; 0 .. t.length)
         {
-            formatPolicy(t[i]);
+            formatArg(t[i], spec, dest);
             if (i < t.length - 1)
             {
-                outPolicy(", ");
+                dest.put(", ");
             }
         }
 
-        outPolicy("]");
+        dest.put("]");
     }
     else static if (isPointer!T)
     {
         char[30] intBuffer;
         auto result = intToString(intBuffer, cast(size_t)t, FmtFlag.Hex, size_t.sizeof);
-        outPolicy(result);
+        dest.put(result);
     }
     else
     {
         pragma(msg, "ERR in print.formatArg(...): Unhandled type " ~ T.stringof);
         static assert(0);
     }
-
-    return bytesWritten;
 }
 
 bool isDigit(char c)
@@ -1165,90 +1181,6 @@ FormatSpec getFormatSpec(in char[] commandStr)
 
     return result;
 }
-
-size_t safeCopy(char[] dest, inout(char)[] source)
-{
-    size_t bytesToCopy = source.length;
-    static if (assertOnTruncation) assert(dest.length >= source.length);
-
-    if(dest.length < source.length)
-    {
-        bytesToCopy = dest.length;
-    }
-
-    // Issue #1: Using memcpy rather than the built-in slice copy operator for compatability with LDC when using the -betterC switch.
-    // https://github.com/tspike2k/djinnprint/issues/1
-    memcpy(dest.ptr, source.ptr, bytesToCopy);
-    return bytesToCopy;
-}
-
-// TODO: We could probably simplify all this if we used slices instead of fmtCursor/fmtCopyToBufferIndex.
-enum printCommon = q{
-    size_t fmtCursor = 0;
-    size_t fmtCopyToBufferIndex = 0;
-
-    while(fmtCursor < fmt.length)
-    {
-        if (fmt[fmtCursor] == '{')
-        {
-            if (fmtCursor < fmt.length - 1 && fmt[fmtCursor+1] == '{')
-            {
-                fmtCursor++;
-                mixin(outputPolicy);
-                fmtCursor++;
-                fmtCopyToBufferIndex = fmtCursor;
-            }
-            else
-            {
-                mixin(outputPolicy);
-
-                fmtCursor++;
-                size_t commandStart = fmtCursor;
-                size_t commandEnd   = fmtCursor;
-                while(fmtCursor < fmt.length)
-                {
-                    if (fmt[fmtCursor] == '}')
-                    {
-                        commandEnd = fmtCursor;
-                        fmtCursor++;
-                        break;
-                    }
-                    fmtCursor++;
-                }
-
-                fmtCopyToBufferIndex = fmtCursor;
-
-                auto formatCommand = fmt[commandStart .. commandEnd];
-
-                auto argIndex = eatAndReturnArgIndex(formatCommand);
-                assert(argIndex < args.length, "ERR: Format index exceeds length of provided arguments.");
-                auto formatSpec = getFormatSpec(formatCommand);
-
-                // NOTE: Variadic template argument indexing based on std.format.getNth(...) from Phobos.
-                outer: switch(argIndex)
-                {
-                    static foreach(i, _; Args)
-                    {
-                        case i:
-                        {
-                            mixin(formatPolicy);
-                        } break outer;
-                    }
-
-                    default:
-                    {
-                        assert(0,"ERR: Unable to access variadic argument.");
-                    } break outer;
-                }
-            }
-        }
-        else
-            fmtCursor++;
-    }
-    fmtCursor = fmt.length;
-
-    mixin(outputPolicy);
-};
 
 void stbsp__lead_sign(stbsp__uint32 fl, char *sign)
 {
