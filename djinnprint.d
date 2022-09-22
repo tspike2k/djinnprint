@@ -848,7 +848,7 @@ struct ArrayRange
     void put(const(char)[] source)
     {
         auto dest = buffer[bytesWritten .. $-1]; // NOTE: Leave at least one char at the end to place the null terminator.
-        static if (assertOnTruncation) assert(source.length <= dest.length);
+        static if (assertOnTruncation) assert(source.length <= dest.length, "Buffer truncation during text formatting.");
 
         size_t bytesToCopy = source.length;
         if(dest.length < bytesToCopy)
