@@ -60,7 +60,9 @@ Special characters within the format specifier allow the user to configure how v
 
 ### format()
 
-The format function is used to format arguments into a fixed size buffer, similar to the snprintf function in C. The format string is passed as the first argument. The function then takes the buffer followed by variadic arguments. The format string is copied into the buffer with each format specifier replaced by the textual representation of a given argument's value. To ensure compatibility with C the end of the resulting string is null terminated. Even if the resulting string is too long to fit in the buffer and is truncated, the last element of the buffer will be set to the null terminator. A slice containing how much text was written into the buffer is returned.
+The format functions serve as the basis for the entire library. They are similar in concept to the snprintf function in C. The user supplies the function with a format string, a destination, and a variable number of arguments. The format string is copied into the destination with each format specifier replaced by the textual representation of a given argument's value.
+
+The main format function takes an Output Range (any data structure that supplies a put method) that can accept a char slice and pushes the result into the Range. That is all this function does. The second function takes a char slice for the destination. This function is a wrapper over the Range-based function, but has a different use-case. This function will copy the result into the buffer, starting from the first character and overwriting any previous contents. If the buffer isn't large enough to contain the result, the result is truncated. Truncation can be configures to fire an assert if desired, though this is disable by default. To ensure compatibility with C, the result will always be null terminated. Therefore, the maximum characters in the result will be __buffer.length-1__. A slice of the source buffer is then returned containing the result *excluding* the null terminator.
 
 ### formatOut(), formatErr()
 
@@ -98,7 +100,9 @@ This project is currently a very early proof-of-concept and is in no way product
 ### Todo
 
 * Testing on Windows (only tested through Wine on Linux).
+* Formatting of classes
 * Allow toPrintIndex to work for structs as well as unions. This would enable users to specify how to format, say, a custom tagged union type.
+* Better documentation
 
 ## Installation
 

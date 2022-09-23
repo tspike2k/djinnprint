@@ -6,9 +6,9 @@
 TODO:
  - Testing on Windows
 
- - Class printing
+ - Formatting of classes
 
- - Prefer using toString method if one exists
+ - Better documentation (explain the reasononing behind decisions, that ranges serve as an abstract output policy, better usage info, etc)
 
  - Better handling of structs with anonymous union members (see format() in Phobos and search for `#{overlap`)?
 
@@ -90,7 +90,7 @@ char[] format(Args...)(const(char)[] fmt, char[] buffer, Args args)
 {
     ArrayRange range;
     range.buffer = buffer[];
-    assert(buffer.length > 0); // TODO: Should we allow this and just return if buffer is empty?
+    assert(buffer.length > 0); // TODO: Should we allow this and just return if the buffer is empty?
 
     format(fmt, range, args);
     range.buffer[range.bytesWritten] = '\0';
