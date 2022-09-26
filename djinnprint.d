@@ -270,7 +270,7 @@ if(isIntegral!T)
         buffer[place] = c;
         n /= base;
 
-        if ((flags & FmtFlag.Comma) && base == 10 && loops % 3 == 0)
+        if ((flags & FmtFlag.Comma) && base == 10 && loops % 3 == 0 && n != 0)
         {
             buffer[--place] = ',';
         }

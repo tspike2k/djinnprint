@@ -310,6 +310,7 @@ void formatOptionsExamples()
     formatOut("  {{0Xz2+} {0Xz2+}\n", testInteger);
     formatOut("  {{0xp4}  {0xp4}\n", testInteger);
     formatOut("  {{0xz12} {0xz12}\n", testInteger);
+    formatOut("  {{0xz12} {0xz12}\n", testInteger);
     printOut("\n");
 
     enum testFloat = 1224.23789f;
